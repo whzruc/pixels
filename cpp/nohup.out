@@ -1,0 +1,476 @@
+-1
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q01.benchmark	0	
+Result: 51.617791
+[ perf record: Woken up 29 times to write data ]
+[ perf record: Captured and wrote 7.931 MB perf.data (30881 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q02.benchmark	0	
+Result: 10.643955
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 0.612 MB perf.data (3199 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q03.benchmark	0	
+Result: 13.583030
+[ perf record: Woken up 2 times to write data ]
+[ perf record: Captured and wrote 1.289 MB perf.data (5560 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q04.benchmark	0	
+Result: 9.409532
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 1.156 MB perf.data (5490 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q05.benchmark	0	
+Result: 13.702368
+[ perf record: Woken up 2 times to write data ]
+[ perf record: Captured and wrote 1.492 MB perf.data (6382 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q06.benchmark	0	
+Result: 2.317430
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 0.562 MB perf.data (2838 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q07.benchmark	0	
+Result: 17.955662
+[ perf record: Woken up 3 times to write data ]
+[ perf record: Captured and wrote 1.699 MB perf.data (7731 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q08.benchmark	0	
+Result: 17.019693
+[ perf record: Woken up 3 times to write data ]
+[ perf record: Captured and wrote 1.837 MB perf.data (7608 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q09.benchmark	0	
+Result: 48.603538
+[ perf record: Woken up 14 times to write data ]
+[ perf record: Captured and wrote 4.610 MB perf.data (18118 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q10.benchmark	0	
+Result: 64.277739
+[ perf record: Woken up 11 times to write data ]
+[ perf record: Captured and wrote 3.583 MB perf.data (16731 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q11.benchmark	0	
+Result: 10.740706
+[ perf record: Woken up 2 times to write data ]
+[ perf record: Captured and wrote 0.608 MB perf.data (3024 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q12.benchmark	0	
+Result: 18.054812
+[ perf record: Woken up 3 times to write data ]
+[ perf record: Captured and wrote 1.532 MB perf.data (7209 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q13.benchmark	0	
+Result: 38.149355
+[ perf record: Woken up 5 times to write data ]
+[ perf record: Captured and wrote 1.850 MB perf.data (7462 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q14.benchmark	0	
+Result: 7.388139
+[ perf record: Woken up 2 times to write data ]
+[ perf record: Captured and wrote 0.856 MB perf.data (3947 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q15.benchmark	0	
+Result: 5.137728
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 0.922 MB perf.data (4345 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q16.benchmark	0	
+Result: 28.890014
+[ perf record: Woken up 3 times to write data ]
+[ perf record: Captured and wrote 1.288 MB perf.data (5775 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q17.benchmark	0	
+Result: 6.847885
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 1.203 MB perf.data (5482 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q18.benchmark	0	
+Result: 15.562619
+[ perf record: Woken up 2 times to write data ]
+[ perf record: Captured and wrote 1.866 MB perf.data (8526 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q19.benchmark	0	
+Result: 19.544023
+[ perf record: Woken up 3 times to write data ]
+[ perf record: Captured and wrote 1.850 MB perf.data (8142 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q20.benchmark	0	
+Result: 7.508316
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 0.860 MB perf.data (4216 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q21.benchmark	0	
+Result: 20.212492
+[ perf record: Woken up 3 times to write data ]
+[ perf record: Captured and wrote 3.706 MB perf.data (15580 samples) ]
+WARNING: Kernel address maps (/proc/{kallsyms,modules}) are restricted,
+check /proc/sys/kernel/kptr_restrict and /proc/sys/kernel/perf_event_paranoid.
+
+Samples in kernel functions may not be resolved if a suitable vmlinux
+file is not found in the buildid cache or in the vmlinux path.
+
+Samples in kernel modules won't be resolved at all.
+
+If some relocation was applied (e.g. kexec) symbols may be misresolved
+even with a suitable vmlinux or kallsyms file.
+
+Couldn't record kernel reference relocation symbol
+Symbol resolution may be skewed if relocation was used (e.g. kexec).
+Check /proc/kallsyms permission or run as root.
+name	run	timing
+NRuns: 1
+
+benchmark/tpch/parquet/tpch_1/q22.benchmark	0	
+Result: 12.195437
+[ perf record: Woken up 2 times to write data ]
+[ perf record: Captured and wrote 0.801 MB perf.data (4232 samples) ]
+All flame graphs have been generated in the output directory.
+iostat monitoring for q01 stopped and results saved to output-parquet-1000/q01_output.csv.
+iostat monitoring for q02 stopped and results saved to output-parquet-1000/q02_output.csv.
+iostat monitoring for q03 stopped and results saved to output-parquet-1000/q03_output.csv.
+iostat monitoring for q04 stopped and results saved to output-parquet-1000/q04_output.csv.
+iostat monitoring for q05 stopped and results saved to output-parquet-1000/q05_output.csv.
+iostat monitoring for q06 stopped and results saved to output-parquet-1000/q06_output.csv.
+iostat monitoring for q07 stopped and results saved to output-parquet-1000/q07_output.csv.
+iostat monitoring for q08 stopped and results saved to output-parquet-1000/q08_output.csv.
+Traceback (most recent call last):
+  File "/home/whz/dev/pixels/cpp/monitor_io.py", line 57, in <module>
+    ws=float(lines[7])
+FileNotFoundError: [Errno 2] No such file or directory: 'iostat_tmp.txt'
