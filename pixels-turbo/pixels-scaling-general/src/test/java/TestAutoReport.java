@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 PixelsDB.
+ * Copyright 2024 PixelsDB.
  *
  * This file is part of Pixels.
  *
@@ -17,28 +17,20 @@
  * License along with Pixels.  If not, see
  * <https://www.gnu.org/licenses/>.
  */
-syntax = "proto3";
 
-option java_multiple_files = false;
-option java_package = "io.pixelsdb.pixels.retina";
-option java_outer_classname = "RetinaWriterProto";
+import io.pixelsdb.pixels.common.turbo.MetricsCollector;
+import org.junit.Test;
 
-package retina_writer.proto;
-
-service RetinaWriterService {
-  rpc Flush (FlushRequest) returns (FlushResponse);
+public class TestAutoReport
+{
+    @Test
+    public void test() throws InterruptedException
+    {
+        if (MetricsCollector.Instance().isPresent())
+        {
+            System.out.println("reporting...");
+            MetricsCollector.Instance().get().report();
+            Thread.sleep(10000);
+        }
+    }
 }
-
-message FlushRequest {
-  string schemaName = 1;
-  string tableName = 2;
-  sint32 rgid = 3;
-  string filePath = 4;
-  uint64 pos = 5;
-}
-
-message FlushResponse {
-  int32 errorCode = 1;
-  uint64 pos = 2;
-}
-

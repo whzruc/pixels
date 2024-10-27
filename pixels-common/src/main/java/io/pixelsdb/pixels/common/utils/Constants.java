@@ -42,6 +42,7 @@ public final class Constants
     public static final String LAYOUT_VERSION_LITERAL = "layout_version";
     public static final String CACHE_VERSION_LITERAL = "cache_version";
     public static final String CACHE_LOCATION_LITERAL = "cache_location_";
+    public static final int HOSTNAME_INDEX_IN_CACHE_LOCATION_LITERAL = 3;
     public static final String HEARTBEAT_COORDINATOR_LITERAL = "heartbeat_coordinator_";
     public static final String HEARTBEAT_WORKER_LITERAL = "heartbeat_worker_";
 
@@ -52,6 +53,9 @@ public final class Constants
     public static final String TRANS_CONTEXT_VM_COST_CENTS_KEY = "trans_vm_cost_cents";
     public static final String TRANS_CONTEXT_CF_COST_CENTS_KEY = "trans_cf_cost_cents";
     public static final String TRANS_CONTEXT_SCAN_BYTES_KEY = "trans_scan_bytes";
+    public static final String TRANS_HIGH_WATERMARK_KEY = "trans_high_watermark";
+    public static final String TRANS_LOW_WATERMARK_KEY = "trans_low_watermark";
+    public static final int TRANS_WATERMARKS_CHECKPOINT_PERIOD_SEC = 10;
 
     /**
      * The time in seconds that a relaxed query can be postponed for execution.
@@ -66,7 +70,10 @@ public final class Constants
      * Issue #108:
      * The prefix for read-write lock used in etcd auto-increment id.
      */
-    public static final String AI_LOCK_PATH_PREFIX = "/pixels_ai_lock/";
+    public static final String AI_LOCK_PATH_PREFIX = "/ai_lock_/";
+    public static final long AI_DEFAULT_STEP = 1000; // Issue #729: should be large enough to reach 1M tps
+    public static final String AI_TRANS_ID_KEY = "trans_id";
+    public static final String AI_TRANS_TS_KEY = "trans_ts";
 
     public static final String CF_OUTPUT_STATE_KEY_PREFIX = "pixels_turbo_cf_output";
 }
