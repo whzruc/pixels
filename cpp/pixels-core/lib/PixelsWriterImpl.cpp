@@ -290,7 +290,7 @@ void PixelsWriterImpl::writeFileTail()
 
     // flush filetail
     int fileTailLen = fileTail.ByteSizeLong() + 8;
-//    std::cout << "fileTailLen:" << fileTailLen << std::endl;
+    std::cout << "fileTailLen:" << fileTailLen << std::endl;
     physicalWriter->prepare(fileTailLen);
     std::shared_ptr <ByteBuffer> fileTailBuffer = std::make_shared<ByteBuffer>(fileTail.ByteSizeLong());
     fileTail.SerializeToArray(fileTailBuffer->getPointer(), fileTail.ByteSizeLong());
@@ -300,7 +300,7 @@ void PixelsWriterImpl::writeFileTail()
       tailOffset=(long)__builtin_bswap64(tailOffset);
     }
 
-//    std::cout << "fileTailOffset:" << tailOffset << std::endl;
+    std::cout << "fileTailOffset:" << tailOffset << std::endl;
     std::shared_ptr <ByteBuffer> tailOffsetBuffer = std::make_shared<ByteBuffer>(8);
     tailOffsetBuffer->putLong(tailOffset);
     physicalWriter->append(tailOffsetBuffer);
