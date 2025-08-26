@@ -209,6 +209,7 @@ unique_ptr<FunctionData> PixelsScanFunction::PixelsScanBind(
   result->initialPixelsReader = pixelsReader;
   result->fileSchema = fileSchema;
   result->files = filePaths;
+  result->curFileId=0;
 
   return std::move(result);
 }
@@ -226,7 +227,8 @@ unique_ptr<GlobalTableFunctionState> PixelsScanFunction::PixelsScanInitGlobal(
   int max_threads = std::stoi(ConfigFactory::Instance().getProperty("pixel.threads"));
   if (max_threads <= 0)
     {
-    max_threads = (int) bind_data.files.size();
+    unsigned int system_threads = std::thread::hardware_concurrency();
+    max_threads = static_cast<int>(system_threads);
     }
 
   result->storageArrayScheduler = std::make_shared<StorageArrayScheduler>(bind_data.files, max_threads);
@@ -234,6 +236,10 @@ unique_ptr<GlobalTableFunctionState> PixelsScanFunction::PixelsScanInitGlobal(
   result->file_index.resize(result->storageArrayScheduler->getDeviceSum());
 
   result->max_threads = max_threads;
+
+  result->active_threads=max_threads;
+
+  result->all_done=false;
 
   result->batch_index = 0;
 
@@ -447,7 +453,7 @@ void PixelsScanFunction::TransformDuckdbChunk(PixelsReadLocalState &data,
   vectorizedRowBatch->increment(thisOutputChunkRows);
 }
 
-bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, const PixelsReadBindData &bind_data,
+bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsReadBindData &bind_data,
                                                  PixelsReadLocalState &scan_data,
                                                  PixelsReadGlobalState &parallel_state,
                                                  bool is_init_state)
@@ -469,19 +475,25 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, const P
       parallel_state.file_index.at(scan_data.deviceID) >= StorageInstance->getFileSum(scan_data.deviceID)) ||
       scan_data.next_file_index >= StorageInstance->getFileSum(scan_data.deviceID))
     {
-    ::BufferPool::Reset();
-    // if async io is enabled, we need to unregister uring buffer
-    if (ConfigFactory::Instance().boolCheckProperty("localfs.enable.async.io"))
+    int remaining_threads = --parallel_state.active_threads;
+    if (remaining_threads==0&&!parallel_state.all_done) {
+      ::BufferPool::PrintStats();
+      ::BufferPool::Reset();
+
+      // if async io is enabled, we need to unregister uring buffer
+      if (ConfigFactory::Instance().boolCheckProperty("localfs.enable.async.io"))
       {
-      if (ConfigFactory::Instance().getProperty("localfs.async.lib") == "iouring")
+        if (ConfigFactory::Instance().getProperty("localfs.async.lib") == "iouring")
         {
-        ::DirectUringRandomAccessFile::Reset();
+          // ::DirectUringRandomAccessFile::Reset();
         } else if (ConfigFactory::Instance().getProperty("localfs.async.lib") == "aio")
         {
-        throw InvalidArgumentException(
-            "PhysicalLocalReader::readAsync: We don't support aio for our async read yet.");
+          throw InvalidArgumentException(
+              "PhysicalLocalReader::readAsync: We don't support aio for our async read yet.");
         }
       }
+      parallel_state.all_done = true;  // 标记已完成，避免重复调用
+    }
     parallel_lock.unlock();
     return false;
     }
@@ -492,6 +504,7 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, const P
   scan_data.next_batch_index = StorageInstance->getBatchID(scan_data.deviceID, scan_data.next_file_index);
   scan_data.curr_file_name = scan_data.next_file_name;
   parallel_state.file_index.at(scan_data.deviceID)++;
+  ++bind_data.curFileId;
   parallel_lock.unlock();
   // The below code uses global state but no race happens, so we don't need the lock anymore
 
@@ -513,20 +526,20 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, const P
     }
   if (scan_data.next_file_index < StorageInstance->getFileSum(scan_data.deviceID))
     {
-    auto footerCache = std::make_shared<PixelsFooterCache>();
-    auto builder = std::make_shared<PixelsReaderBuilder>();
-    std::shared_ptr<::Storage> storage = StorageFactory::getInstance()->getStorage(::Storage::file);
-    scan_data.next_file_name = StorageInstance->getFileName(scan_data.deviceID, scan_data.next_file_index);
-    scan_data.nextReader = builder->setPath(scan_data.next_file_name)
-        ->setStorage(storage)
-        ->setPixelsFooterCache(footerCache)
-        ->build();
+      auto footerCache = std::make_shared<PixelsFooterCache>();
+      auto builder = std::make_shared<PixelsReaderBuilder>();
+      std::shared_ptr<::Storage> storage = StorageFactory::getInstance()->getStorage(::Storage::file);
+      scan_data.next_file_name = StorageInstance->getFileName(scan_data.deviceID, scan_data.next_file_index);
+      scan_data.nextReader = builder->setPath(scan_data.next_file_name)
+          ->setStorage(storage)
+          ->setPixelsFooterCache(footerCache)
+          ->build();
 
-    PixelsReaderOption option = GetPixelsReaderOption(scan_data, parallel_state);
-    scan_data.nextPixelsRecordReader = scan_data.nextReader->read(option);
-    auto nextPixelsRecordReader = std::static_pointer_cast<PixelsRecordReaderImpl>(
-        scan_data.nextPixelsRecordReader);
-    nextPixelsRecordReader->read();
+      PixelsReaderOption option = GetPixelsReaderOption(scan_data, parallel_state);
+      scan_data.nextPixelsRecordReader = scan_data.nextReader->read(option);
+      auto nextPixelsRecordReader = std::static_pointer_cast<PixelsRecordReaderImpl>(
+          scan_data.nextPixelsRecordReader);
+      nextPixelsRecordReader->read();
     } else
     {
     scan_data.nextReader = nullptr;

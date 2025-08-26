@@ -61,11 +61,17 @@ public:
 
     std::shared_ptr <ByteBuffer> allocateDirectBuffer(long size);
 
+    int getToAllocate(int size);
+
     std::shared_ptr <ByteBuffer> read(int fd, long fileOffset, std::shared_ptr <ByteBuffer> directBuffer, long length);
 
     long blockStart(long value);
 
     long blockEnd(long value);
+
+    int getBlockSize() const {
+        return fsBlockSize;
+    };
 
 private:
     int fsBlockSize;

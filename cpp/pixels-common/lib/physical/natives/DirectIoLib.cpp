@@ -40,14 +40,22 @@ std::shared_ptr <ByteBuffer> DirectIoLib::allocateDirectBuffer(long size)
     return directBuffer;
 }
 
+int DirectIoLib::getToAllocate(int size) {
+    return blockEnd(size) + (size == 1 ? 0 : fsBlockSize);
+}
+
+
+
+
 std::shared_ptr <ByteBuffer> DirectIoLib::read(int fd, long fileOffset,
                                                std::shared_ptr <ByteBuffer> directBuffer, long length)
 {
     // the file will be read from blockStart(fileOffset), and the first fileDelta bytes should be ignored.
     long fileOffsetAligned = blockStart(fileOffset);
     long toRead = blockEnd(fileOffset + length) - blockStart(fileOffset);
-    if (pread(fd, directBuffer->getPointer(), toRead, fileOffsetAligned) == -1)
-    {
+    ssize_t ret = pread(fd, directBuffer->getPointer(), toRead, fileOffsetAligned);
+    if (ret == -1) {
+        perror("pread failed");
         throw InvalidArgumentException("DirectIoLib::read: pread fail. ");
     }
     auto bb = std::make_shared<ByteBuffer>(*directBuffer,
