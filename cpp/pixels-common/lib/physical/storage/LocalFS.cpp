@@ -25,6 +25,8 @@
 #include "physical/storage/LocalFS.h"
 #include "physical/natives/DirectRandomAccessFile.h"
 #include "physical/natives/DirectUringRandomAccessFile.h"
+#include "physical/natives/DirectUringRandomAccessFileDynamic.h"
+#include "physical/BufferPoolMode.h"
 #include "physical/FilePath.h"
 #include <filesystem>
 
@@ -58,15 +60,11 @@ std::string LocalFS::ensureSchemePrefix(const std::string &path) const
 
 std::shared_ptr <PixelsRandomAccessFile> LocalFS::openRaf(const std::string &path)
 {
-    if (true)
+    if (GetBufferPoolMode() == BufferPoolMode::Dynamic)
     {
-        // TODO: change this class to mmap class in the future.
-        return std::make_shared<DirectUringRandomAccessFile>(path);
+        return std::make_shared<DirectUringRandomAccessFileDynamic>(path);
     }
-    else
-    {
-        return std::make_shared<DirectRandomAccessFile>(path);
-    }
+    return std::make_shared<DirectUringRandomAccessFile>(path);
 }
 
 std::vector <std::string> LocalFS::listPaths(const std::string &path)

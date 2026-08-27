@@ -24,6 +24,8 @@
  */
 #include "PixelsScanFunction.hpp"
 #include "physical/StorageArrayScheduler.h"
+#include "physical/BufferPoolMode.h"
+#include "physical/natives/DirectUringRandomAccessFileDynamic.h"
 #include "profiler/CountProfiler.h"
 
 /// @brief 
@@ -474,15 +476,26 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
       parallel_state.file_index.at(scan_data.deviceID) >= StorageInstance->getFileSum(scan_data.deviceID)) ||
       scan_data.next_file_index >= StorageInstance->getFileSum(scan_data.deviceID))
     {
+    if (GetBufferPoolMode() == BufferPoolMode::Dynamic)
+      {
+      ::DirectUringRandomAccessFileDynamic::Reset();
+      }
     int remaining_threads = --parallel_state.active_threads;
-    if (remaining_threads==0&&!parallel_state.all_done) {
-      ::BufferPool::Reset();
+    if (remaining_threads == 0 && !parallel_state.all_done)
+      {
+      if (GetBufferPoolMode() == BufferPoolMode::Legacy)
+        {
+        ::BufferPool::Reset();
+        }
       // if async io is enabled, we need to unregister uring buffer
       if (ConfigFactory::Instance().boolCheckProperty("localfs.enable.async.io"))
       {
         if (ConfigFactory::Instance().getProperty("localfs.async.lib") == "iouring")
         {
-          ::DirectUringRandomAccessFile::Reset();
+          if (GetBufferPoolMode() != BufferPoolMode::Dynamic)
+            {
+            ::DirectUringRandomAccessFile::Reset();
+            }
         } else if (ConfigFactory::Instance().getProperty("localfs.async.lib") == "aio")
         {
           throw InvalidArgumentException(
@@ -490,7 +503,7 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
         }
       }
       parallel_state.all_done = true;
-    }
+      }
     parallel_lock.unlock();
     return false;
     }

@@ -43,6 +43,8 @@ public:
 
     std::string getProperty(std::string key);
 
+    std::string getProperty(const std::string &key, const std::string &defaultValue);
+
     bool boolCheckProperty(std::string key);
 
     bool getBoolProperty(const std::string &key, bool defaultValue);

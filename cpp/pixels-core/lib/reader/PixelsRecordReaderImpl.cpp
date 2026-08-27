@@ -26,6 +26,9 @@
 #include "physical/io/PhysicalLocalReader.h"
 #include "profiler/CountProfiler.h"
 #include "profiler/TimeProfiler.h"
+#include "physical/BufferPoolMode.h"
+#include "physical/DynamicBufferPool.h"
+#include "physical/natives/DirectUringRandomAccessFileDynamic.h"
 std::mutex PixelsRecordReaderImpl::mutex_;
 PixelsRecordReaderImpl::PixelsRecordReaderImpl(std::shared_ptr <PhysicalReader> reader,
                                                const pixels::fb::PostScript *pixelsPostScript,
@@ -487,31 +490,65 @@ bool PixelsRecordReaderImpl::read()
         for (int i = 0; i < diskChunks.size(); i++)
         {
             ChunkId chunk = diskChunks.at(i);
-            requestBatch.add(queryId, chunk.offset, (int) chunk.length, ::BufferPool::GetBufferId());
             colIds.emplace_back(chunk.columnId);
             bytes.emplace_back(chunk.length);
 
         }
         auto columnNames = fileSchema->getFieldNames();
-        ::BufferPool::Initialize(colIds, bytes, columnNames);
-        ::DirectUringRandomAccessFile::RegisterBufferFromPool(colIds);
         std::vector <std::shared_ptr<ByteBuffer>> originalByteBuffers;
         std::vector<int> ring_col;
-        for (int i = 0; i < colIds.size(); i++)
+        if (GetBufferPoolMode() == BufferPoolMode::Dynamic)
         {
-            auto colId = colIds.at(i);
-            auto byte=bytes.at(i);
-            auto currentBufferEntry=::BufferPool::GetBuffer(colId,byte,columnNames[colId]);
-            originalByteBuffers.emplace_back(currentBufferEntry);
-            requestBatch.getRequest(i).ringIndex=::BufferPool::getRingIndex(colId);
-            if (currentBufferEntry->size()-requestBatch.getRequest(i).length<=4096) {
-                throw InvalidArgumentException(
-                    "PixelsRecordReaderImpl::read: insufficient buffer capacity");
+            ::DirectUringRandomAccessFileDynamic::Initialize();
+            auto directIoLib = ::DynamicBufferPool::GetDirectIoLib();
+            for (int i = 0; i < colIds.size(); i++)
+            {
+                auto colId = colIds.at(i);
+                auto bufferKey = colId * 2 + static_cast<uint32_t>(::BufferPool::GetBufferId());
+                auto chunk = diskChunks.at(i);
+                uint64_t bufferSize = chunk.length;
+                if (ConfigFactory::Instance().boolCheckProperty("localfs.enable.direct.io"))
+                {
+                    auto alignedOffset = directIoLib->blockStart(chunk.offset);
+                    bufferSize = directIoLib->blockEnd(chunk.offset + chunk.length) - alignedOffset;
+                }
+                auto buffer = ::DynamicBufferPool::GetBuffer(bufferKey);
+                if (buffer == nullptr)
+                {
+                    buffer = ::DynamicBufferPool::AllocateBuffer(bufferKey, bufferSize);
+                }
+                else if (buffer->size() < bufferSize)
+                {
+                    buffer = ::DynamicBufferPool::GrowBuffer(bufferKey, bufferSize);
+                }
+                originalByteBuffers.emplace_back(buffer);
+                requestBatch.add(queryId, chunk.offset, chunk.length,
+                                 ::DynamicBufferPool::GetBufferSlotIndex(bufferKey));
             }
-
-            if (requestBatch.getRequest(i).ringIndex !=0) {
-                requestBatch.getRequest(i).bufferId=0;
-                ring_col.emplace_back(i);
+        }
+        else
+        {
+            ::BufferPool::Initialize(colIds, bytes, columnNames);
+            ::DirectUringRandomAccessFile::RegisterBufferFromPool(colIds);
+            for (int i = 0; i < colIds.size(); i++)
+            {
+                auto colId = colIds.at(i);
+                auto byte = bytes.at(i);
+                auto currentBufferEntry = ::BufferPool::GetBuffer(colId, byte, columnNames[colId]);
+                originalByteBuffers.emplace_back(currentBufferEntry);
+                requestBatch.add(queryId, diskChunks.at(i).offset, diskChunks.at(i).length,
+                                 ::BufferPool::GetBufferId());
+                requestBatch.getRequest(i).ringIndex = ::BufferPool::getRingIndex(colId);
+                if (currentBufferEntry->size() - requestBatch.getRequest(i).length <= 4096)
+                {
+                    throw InvalidArgumentException(
+                        "PixelsRecordReaderImpl::read: insufficient buffer capacity");
+                }
+                if (requestBatch.getRequest(i).ringIndex != 0)
+                {
+                    requestBatch.getRequest(i).bufferId = 0;
+                    ring_col.emplace_back(i);
+                }
             }
         }
         PROFILE_END("PixelsRecordReaderImpl.read.PrepareChunks");
