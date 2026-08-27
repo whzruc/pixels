@@ -23,7 +23,8 @@
  * @create 2023-05-03
  */
 #include "profiler/TimeProfiler.h"
-
+#include "profiler/ProfilerSwitch.h"
+#include <sstream>
 
 thread_local std::map<std::string, std::chrono::steady_clock::time_point>
 TimeProfiler::profiling;
@@ -42,64 +43,69 @@ TimeProfiler::TimeProfiler()
 
 void TimeProfiler::Start(const std::string &label)
 {
-    if constexpr(enableProfile)
+    if (!IsPixelsProfilerEnabled())
     {
-        if (profiling.find(label) != profiling.end())
-        {
-            throw InvalidArgumentException(
-                    "TimeProfiler::Start: The same label has already been started. ");
-        }
-        else if (label.size() == 0)
-        {
-            throw InvalidArgumentException(
-                    "TimeProfiler::Start: Label cannot be the empty string. ");
-        }
-        else
-        {
-            profiling[label] = std::chrono::steady_clock::now();
-        }
+        return;
+    }
+    if (profiling.find(label) != profiling.end())
+    {
+        throw InvalidArgumentException(
+                "TimeProfiler::Start: The same label has already been started. ");
+    }
+    else if (label.size() == 0)
+    {
+        throw InvalidArgumentException(
+                "TimeProfiler::Start: Label cannot be the empty string. ");
+    }
+    else
+    {
+        profiling[label] = std::chrono::steady_clock::now();
     }
 }
 
 void TimeProfiler::End(const std::string &label)
 {
-    if constexpr(enableProfile)
+    if (!IsPixelsProfilerEnabled())
     {
-        if (profiling.find(label) == profiling.end())
-        {
-            throw InvalidArgumentException(
-                    "TimeProfiler::End: The label is not started yet. ");
-        }
-        else if (label.size() == 0)
-        {
-            throw InvalidArgumentException(
-                    "TimeProfiler::End: Label cannot be the empty string. ");
-        }
-        auto startTime = profiling[label];
-        auto endTime = std::chrono::steady_clock::now();
-        profiling.erase(label);
-        if (localResult.find(label) == localResult.end())
-        {
-            localResult[label] = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime - startTime).count();
-        }
-        else
-        {
-            localResult[label] = localResult[label] + std::chrono::duration_cast<std::chrono::nanoseconds>
-                    (endTime - startTime).count();
-        }
-
+        return;
+    }
+    if (profiling.find(label) == profiling.end())
+    {
+        throw InvalidArgumentException(
+                "TimeProfiler::End: The label is not started yet. ");
+    }
+    else if (label.size() == 0)
+    {
+        throw InvalidArgumentException(
+                "TimeProfiler::End: Label cannot be the empty string. ");
+    }
+    auto startTime = profiling[label];
+    auto endTime = std::chrono::steady_clock::now();
+    profiling.erase(label);
+    if (localResult.find(label) == localResult.end())
+    {
+        localResult[label] = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime - startTime).count();
+    }
+    else
+    {
+        localResult[label] = localResult[label] + std::chrono::duration_cast<std::chrono::nanoseconds>
+                (endTime - startTime).count();
     }
 }
 
 void TimeProfiler::Print()
 {
-    if constexpr(enableProfile)
+    if (!IsPixelsProfilerEnabled())
     {
-        for (auto iter: globalResult)
-        {
-            std::cout << iter.first << " " << 1.0 * iter.second / 1000000000 << "s(thread time)" << std::endl;
-        }
+        return;
     }
+    std::unique_lock <std::mutex> parallel_lock(lock);
+    std::ostringstream output;
+    for (auto iter: globalResult)
+    {
+        output << iter.first << " " << 1.0 * iter.second / 1000000000 << "s(thread time)" << std::endl;
+    }
+    std::cout << output.str();
 }
 
 void TimeProfiler::Reset()
@@ -130,6 +136,10 @@ int TimeProfiler::GetResultSize()
 
 void TimeProfiler::Collect()
 {
+    if (!IsPixelsProfilerEnabled())
+    {
+        return;
+    }
     std::unique_lock <std::mutex> parallel_lock(lock);
     for (auto iter: localResult)
     {
@@ -146,4 +156,3 @@ void TimeProfiler::Collect()
     }
     localResult.clear();
 }
-

@@ -23,6 +23,7 @@
  * @create 2023-05-03
  */
 #include "profiler/CountProfiler.h"
+#include "profiler/ProfilerSwitch.h"
 
 CountProfiler &CountProfiler::Instance()
 {
@@ -32,54 +33,57 @@ CountProfiler &CountProfiler::Instance()
 
 void CountProfiler::Count(const std::string &label)
 {
-    if constexpr(enableProfile)
+    if (!IsPixelsProfilerEnabled())
     {
-        std::unique_lock <std::mutex> parallel_lock(lock);
-        if (result.find(label) != result.end())
-        {
-            result[label] += 1;
-        }
-        else if (label.size() == 0)
-        {
-            throw InvalidArgumentException(
-                    "TimeProfiler::Start: Label cannot be the empty string. ");
-        }
-        else
-        {
-            result[label] = 1;
-        }
+        return;
+    }
+    std::unique_lock <std::mutex> parallel_lock(lock);
+    if (result.find(label) != result.end())
+    {
+        result[label] += 1;
+    }
+    else if (label.size() == 0)
+    {
+        throw InvalidArgumentException(
+                "CountProfiler::Count: Label cannot be the empty string. ");
+    }
+    else
+    {
+        result[label] = 1;
     }
 }
 
 void CountProfiler::Count(const std::string &label, int num)
 {
-    if constexpr(enableProfile)
+    if (!IsPixelsProfilerEnabled())
     {
-        std::unique_lock <std::mutex> parallel_lock(lock);
-        if (result.find(label) != result.end())
-        {
-            result[label] += num;
-        }
-        else if (label.size() == 0)
-        {
-            throw InvalidArgumentException(
-                    "TimeProfiler::Start: Label cannot be the empty string. ");
-        }
-        else
-        {
-            result[label] = num;
-        }
+        return;
+    }
+    std::unique_lock <std::mutex> parallel_lock(lock);
+    if (result.find(label) != result.end())
+    {
+        result[label] += num;
+    }
+    else if (label.size() == 0)
+    {
+        throw InvalidArgumentException(
+                "CountProfiler::Count: Label cannot be the empty string. ");
+    }
+    else
+    {
+        result[label] = num;
     }
 }
 
 void CountProfiler::Print()
 {
-    if constexpr(enableProfile)
+    if (!IsPixelsProfilerEnabled())
     {
-        for (auto iter: result)
-        {
-            std::cout << "The count of " << iter.first << " is " << iter.second << std::endl;
-        }
+        return;
+    }
+    for (auto iter: result)
+    {
+        std::cout << "The count of " << iter.first << " is " << iter.second << std::endl;
     }
 }
 
@@ -101,4 +105,3 @@ long CountProfiler::Get(const std::string &label)
                 "CountProfiler::Get: The label is not contained in CountProfiler. ");
     }
 }
-

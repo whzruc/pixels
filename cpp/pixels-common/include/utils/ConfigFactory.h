@@ -45,6 +45,8 @@ public:
 
     bool boolCheckProperty(std::string key);
 
+    bool getBoolProperty(const std::string &key, bool defaultValue);
+
     std::string getPixelsDirectory();
 
     std::string getPixelsSourceDirectory();
