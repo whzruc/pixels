@@ -26,11 +26,18 @@
 #include "physical/natives/DirectRandomAccessFile.h"
 #include "physical/natives/DirectUringRandomAccessFile.h"
 #include "physical/natives/DirectUringRandomAccessFileDynamic.h"
+#include "physical/natives/DirectUringRandomAccessFileStatic.h"
+#include "physical/GlobalStaticBufferPool.h"
 #include "physical/BufferPoolMode.h"
 #include "physical/FilePath.h"
 #include <filesystem>
 
 namespace fs = std::filesystem;
+
+namespace
+{
+thread_local int staticBufferThreadId = -1;
+}
 
 std::string LocalFS::SchemePrefix = "file://";
 
@@ -63,6 +70,23 @@ std::shared_ptr <PixelsRandomAccessFile> LocalFS::openRaf(const std::string &pat
     if (GetBufferPoolMode() == BufferPoolMode::Dynamic)
     {
         return std::make_shared<DirectUringRandomAccessFileDynamic>(path);
+    }
+    if (GetBufferPoolMode() == BufferPoolMode::Static)
+    {
+        auto &pool = GlobalStaticBufferPool::Instance();
+        if (!pool.IsInitialized())
+        {
+            auto &config = ConfigFactory::Instance();
+            auto sizePath = config.getProperty("pixel.column.size.path");
+            int blockSize = std::stoi(config.getProperty("localfs.block.size", "4096"));
+            int threads = std::stoi(config.getProperty("pixel.static.buffer.threads", "4"));
+            pool.Initialize(sizePath, blockSize, threads);
+        }
+        if (staticBufferThreadId < 0)
+        {
+            staticBufferThreadId = pool.AcquireThreadId();
+        }
+        return std::make_shared<DirectUringRandomAccessFileStatic>(path, pool.GetRing(staticBufferThreadId));
     }
     return std::make_shared<DirectUringRandomAccessFile>(path);
 }

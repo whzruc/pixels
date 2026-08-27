@@ -492,7 +492,7 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
       {
         if (ConfigFactory::Instance().getProperty("localfs.async.lib") == "iouring")
         {
-          if (GetBufferPoolMode() != BufferPoolMode::Dynamic)
+          if (GetBufferPoolMode() == BufferPoolMode::Legacy)
             {
             ::DirectUringRandomAccessFile::Reset();
             }

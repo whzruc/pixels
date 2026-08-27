@@ -18,7 +18,8 @@
 enum class BufferPoolMode
 {
     Legacy,
-    Dynamic
+    Dynamic,
+    Static
 };
 
 inline BufferPoolMode GetBufferPoolMode()
@@ -31,6 +32,10 @@ inline BufferPoolMode GetBufferPoolMode()
     if (mode == "dynamic")
     {
         return BufferPoolMode::Dynamic;
+    }
+    if (mode == "static")
+    {
+        return BufferPoolMode::Static;
     }
     throw InvalidArgumentException("Unknown pixel.bufferpool.mode: " + mode);
 }

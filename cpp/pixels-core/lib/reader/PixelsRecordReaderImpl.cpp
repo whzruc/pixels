@@ -28,6 +28,7 @@
 #include "profiler/TimeProfiler.h"
 #include "physical/BufferPoolMode.h"
 #include "physical/DynamicBufferPool.h"
+#include "physical/GlobalStaticBufferPool.h"
 #include "physical/natives/DirectUringRandomAccessFileDynamic.h"
 std::mutex PixelsRecordReaderImpl::mutex_;
 PixelsRecordReaderImpl::PixelsRecordReaderImpl(std::shared_ptr <PhysicalReader> reader,
@@ -524,6 +525,38 @@ bool PixelsRecordReaderImpl::read()
                 originalByteBuffers.emplace_back(buffer);
                 requestBatch.add(queryId, chunk.offset, chunk.length,
                                  ::DynamicBufferPool::GetBufferSlotIndex(bufferKey));
+            }
+        }
+        else if (GetBufferPoolMode() == BufferPoolMode::Static)
+        {
+            static thread_local int threadId = -1;
+            auto &pool = ::GlobalStaticBufferPool::Instance();
+            if (threadId < 0)
+            {
+                threadId = pool.AcquireThreadId();
+            }
+            for (int i = 0; i < colIds.size(); i++)
+            {
+                auto chunk = diskChunks.at(i);
+                auto columnName = columnNames.at(chunk.columnId);
+                int bufferId = ::BufferPool::GetBufferId();
+                auto buffer = pool.GetBuffer(columnName, threadId, bufferId);
+                uint64_t requiredSize = chunk.length;
+                if (ConfigFactory::Instance().boolCheckProperty("localfs.enable.direct.io"))
+                {
+                    auto directIoLib = std::make_shared<DirectIoLib>(
+                        std::stoi(ConfigFactory::Instance().getProperty("localfs.block.size", "4096")));
+                    requiredSize = directIoLib->blockEnd(chunk.offset + chunk.length) -
+                                   directIoLib->blockStart(chunk.offset);
+                }
+                if (buffer->size() < requiredSize)
+                {
+                    throw InvalidArgumentException(
+                        "PixelsRecordReaderImpl::read: static buffer is smaller than the column chunk");
+                }
+                originalByteBuffers.emplace_back(buffer);
+                requestBatch.add(queryId, chunk.offset, chunk.length,
+                                 pool.GetBufferIndex(columnName, bufferId));
             }
         }
         else
