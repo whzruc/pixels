@@ -12,8 +12,12 @@
 #include "physical/GlobalStaticBufferPool.h"
 #include "exception/InvalidArgumentException.h"
 #include "utils/ColumnSizeCSVReader.h"
+#include "utils/ConfigFactory.h"
 
 #include <cstring>
+#ifdef __linux__
+#include <sys/mman.h>
+#endif
 
 GlobalStaticBufferPool &GlobalStaticBufferPool::Instance()
 {
@@ -44,6 +48,7 @@ void GlobalStaticBufferPool::Initialize(const std::string &columnSizePath, int b
 
     maxThreads = threadCount;
     directIoLib = std::make_shared<DirectIoLib>(blockSize);
+    bool useHugePage = ConfigFactory::Instance().getProperty("pixel.static.buffer.hugepage", "false") == "true";
     int columnIndex = 0;
     for (const auto &entry : columnSizes)
     {
@@ -57,6 +62,18 @@ void GlobalStaticBufferPool::Initialize(const std::string &columnSizePath, int b
             for (int bufferId = 0; bufferId < 2; bufferId++)
             {
                 auto buffer = directIoLib->allocateDirectBuffer(entry.second, false);
+#if defined(__linux__) && defined(MADV_HUGEPAGE)
+                if (useHugePage && madvise(buffer->getPointer(), buffer->size(), MADV_HUGEPAGE) != 0)
+                {
+                    throw InvalidArgumentException("GlobalStaticBufferPool::Initialize: MADV_HUGEPAGE failed");
+                }
+#else
+                if (useHugePage)
+                {
+                    throw InvalidArgumentException(
+                        "GlobalStaticBufferPool::Initialize: HugePage advice is unsupported on this platform");
+                }
+#endif
                 std::memset(buffer->getPointer(), 0, buffer->size());
                 columnBuffers[threadId][bufferId] = buffer;
             }
