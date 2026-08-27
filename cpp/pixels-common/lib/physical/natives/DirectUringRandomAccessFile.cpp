@@ -23,6 +23,7 @@
  * @create 2023-05-28
  */
 #include "physical/natives/DirectUringRandomAccessFile.h"
+#include "profiler/TimeProfiler.h"
 
 #include <duckdb/storage/buffer/buffer_pool.hpp>
 
@@ -192,7 +193,7 @@ std::shared_ptr<ByteBuffer> DirectUringRandomAccessFile::readAsync(
         uint64_t fileOffsetAligned = directIoLib->blockStart(offset);
         uint64_t toRead = directIoLib->blockEnd(offset + length) -
             directIoLib->blockStart(offset);
-        size_t block_size = directIoLib->getBlockSize(); // 假设存在获取块大小的方法
+        size_t block_size = directIoLib->getBlockSize();
         size_t required_buffer_size = (offset - fileOffsetAligned) + length;
         if (buffer->size() < required_buffer_size)
         {
@@ -253,6 +254,7 @@ void DirectUringRandomAccessFile::readAsyncSubmit(
     std::unordered_map<int, uint32_t> sizes,
     std::unordered_set<int> ringIndex)
 {
+    PROFILE_START("Uring.AsyncSubmit.Total");
     for (auto i : ringIndex)
     {
         auto ring = DirectUringRandomAccessFile::getRing(i);
@@ -272,12 +274,14 @@ void DirectUringRandomAccessFile::readAsyncSubmit(
             throw InvalidArgumentException(error_msg);
         }
     }
+    PROFILE_END("Uring.AsyncSubmit.Total");
 }
 
 void DirectUringRandomAccessFile::readAsyncComplete(
     std::unordered_map<int, uint32_t> sizes,
     std::unordered_set<int> ringIndex)
 {
+    PROFILE_START("Uring.AsyncComplete.Total");
     // Important! We cannot write the code as io_uring_wait_cqe_nr(ring, &cqe,
     // iovecSize). The reason is unclear, but some random bugs would happen. It
     // takes me nearly a week to find this bug
@@ -287,11 +291,14 @@ void DirectUringRandomAccessFile::readAsyncComplete(
         auto ring = DirectUringRandomAccessFile::getRing(idx);
         for (int j = 0; j < sizes[idx]; j++)
         {
+            PROFILE_START("Uring.AsyncComplete.WaitCQE");
             if (io_uring_wait_cqe_nr(ring, &cqe, 1) != 0)
             {
                 throw InvalidArgumentException(
                     "DirectUringRandomAccessFile::readAsyncComplete: wait cqe fails");
             }
+            PROFILE_END("Uring.AsyncComplete.WaitCQE");
+            PROFILE_START("Uring.AsyncComplete.ProcessCQE");
             if (cqe->res < 0)
             {
                 int errorNumber = -cqe->res;
@@ -301,8 +308,10 @@ void DirectUringRandomAccessFile::readAsyncComplete(
                     std::string(std::strerror(errorNumber)));
             }
             io_uring_cqe_seen(ring, cqe);
+            PROFILE_END("Uring.AsyncComplete.ProcessCQE");
         }
     }
+    PROFILE_END("Uring.AsyncComplete.Total");
 }
 
 struct io_uring* DirectUringRandomAccessFile::getRing(int index)

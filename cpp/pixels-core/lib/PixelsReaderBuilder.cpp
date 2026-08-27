@@ -23,6 +23,7 @@
  * @create 2023-03-06
  */
 #include "PixelsReaderBuilder.h"
+#include "profiler/TimeProfiler.h"
 #include "utils/Endianness.h"
 
 PixelsReaderBuilder::PixelsReaderBuilder()
@@ -76,7 +77,9 @@ std::shared_ptr<PixelsReader> PixelsReaderBuilder::build()
         fsReader->seek (fileLen - (long) sizeof (long));
         // get FileTailOffset
 
+        PROFILE_START("Pixels.Metadata.FileTailOffsetRead");
         long fileTailOffset = fsReader->readLong ();
+        PROFILE_END("Pixels.Metadata.FileTailOffsetRead");
         if (Endianness::isLittleEndian ())
         {
             fileTailOffset = (long) __builtin_bswap64 (fileTailOffset);
@@ -84,7 +87,9 @@ std::shared_ptr<PixelsReader> PixelsReaderBuilder::build()
 
         int fileTailLength = (int) (fileLen - fileTailOffset - sizeof (long));
         fsReader->seek (fileTailOffset);
+        PROFILE_START("Pixels.Metadata.FileTailRead");
         std::shared_ptr<ByteBuffer> fileTailBuffer = fsReader->readFully (fileTailLength);
+        PROFILE_END("Pixels.Metadata.FileTailRead");
         fileTail = pixels::fb::GetFileTail(fileTailBuffer->getPointer());
         if (fileTail == nullptr)
         {

@@ -122,7 +122,10 @@ void PixelsScanFunction::PixelsScanImplementation(ClientContext &context,
     std::shared_ptr<PixelsBitMask> filterMask =
         std::static_pointer_cast<PixelsRecordReaderImpl>(data.currPixelsRecordReader)->getFilterMask();
 
+    PROFILE_START("PixelsScanFunction.TransformDuckdbChunk");
     TransformDuckdbChunk(data, output, resultSchema, thisOutputChunkRows);
+    PROFILE_END("PixelsScanFunction.TransformDuckdbChunk");
+    ::TimeProfiler::Instance().Collect();
 
     // apply the filter operation
     if (enable_filter_pushdown)
@@ -171,6 +174,7 @@ unique_ptr<FunctionData> PixelsScanFunction::PixelsScanBind(
     ClientContext &context, TableFunctionBindInput &input,
     vector<LogicalType> &return_types, vector<string> &names)
 {
+  ::TimeProfiler::Instance().Reset();
   if (input.inputs[0].IsNull())
     {
     throw ParserException("Pixels reader cannot take NULL list as parameter");
@@ -211,6 +215,7 @@ unique_ptr<FunctionData> PixelsScanFunction::PixelsScanBind(
   result->fileSchema = fileSchema;
   result->files = filePaths;
 
+  ::TimeProfiler::Instance().Collect();
   return std::move(result);
 }
 

@@ -25,6 +25,7 @@
 #include "physical/scheduler/NoopScheduler.h"
 #include "exception/InvalidArgumentException.h"
 #include "physical/io/PhysicalLocalReader.h"
+#include "profiler/TimeProfiler.h"
 #include <unordered_set>
 
 Scheduler* NoopScheduler::instance = nullptr;
@@ -49,6 +50,7 @@ std::vector<std::shared_ptr<ByteBuffer>> NoopScheduler::executeBatch(
     std::shared_ptr<PhysicalReader> reader, RequestBatch batch,
     std::vector<std::shared_ptr<ByteBuffer>> reuseBuffers, long queryId)
 {
+    PROFILE_START("NoopScheduler.executeBatch.Total");
     auto requests = batch.getRequests();
     std::vector<std::shared_ptr<ByteBuffer>> results;
     results.resize(batch.getSize());
@@ -99,6 +101,7 @@ std::vector<std::shared_ptr<ByteBuffer>> NoopScheduler::executeBatch(
             }
         }
     }
+    PROFILE_END("NoopScheduler.executeBatch.Total");
     return results;
 }
 

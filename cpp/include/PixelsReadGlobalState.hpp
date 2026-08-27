@@ -32,12 +32,18 @@
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include "PixelsReader.h"
 #include "physical/StorageArrayScheduler.h"
+#include "profiler/TimeProfiler.h"
 
 namespace duckdb
 {
 
     struct PixelsReadGlobalState : public GlobalTableFunctionState
     {
+        ~PixelsReadGlobalState() override
+        {
+            ::TimeProfiler::Instance().Print();
+        }
+
         mutex lock;
 
         atomic<int> active_threads; // Number of active threads
