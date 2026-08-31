@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 include(ExternalProject)
 
-file(GLOB_RECURSE pixels_common_cxx
+file(GLOB_RECURSE pixels_common_cxx CONFIGURE_DEPENDS
 		"lib/physical/*.cpp"
 		"lib/physical/*.h"
 		"lib/exception/*.cpp"

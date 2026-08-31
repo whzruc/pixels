@@ -10,6 +10,7 @@
  */
 
 #include "physical/GlobalStaticBufferPool.h"
+#include "physical/BufferPoolStats.h"
 #include "exception/InvalidArgumentException.h"
 #include "utils/ColumnSizeCSVReader.h"
 #include "utils/ConfigFactory.h"
@@ -76,6 +77,7 @@ void GlobalStaticBufferPool::Initialize(const std::string &columnSizePath, int b
 #endif
                 std::memset(buffer->getPointer(), 0, buffer->size());
                 columnBuffers[threadId][bufferId] = buffer;
+                BufferPoolStats::Instance().RecordAllocation(BufferPoolStatsMode::Static, buffer->size());
             }
         }
     }
@@ -107,6 +109,10 @@ void GlobalStaticBufferPool::Initialize(const std::string &columnSizePath, int b
         {
             throw InvalidArgumentException("GlobalStaticBufferPool::Initialize: failed to register buffers");
         }
+        for (const auto &iov : iovecs)
+        {
+            BufferPoolStats::Instance().RecordRegistration(BufferPoolStatsMode::Static, iov.iov_len);
+        }
     }
     initialized = true;
 }
@@ -132,6 +138,7 @@ struct io_uring *GlobalStaticBufferPool::GetRing(int threadId) { return rings.at
 
 std::shared_ptr<ByteBuffer> GlobalStaticBufferPool::GetBuffer(const std::string &columnName, int threadId, int bufferId)
 {
+    BufferPoolStats::Instance().RecordReuse(BufferPoolStatsMode::Static);
     return buffers.at(columnName).at(threadId).at(bufferId);
 }
 
@@ -161,6 +168,7 @@ size_t GlobalStaticBufferPool::GetTotalAllocatedBytes() const
 void GlobalStaticBufferPool::Reset()
 {
     std::lock_guard<std::mutex> lock(mutex);
+    size_t allocatedBytes = GetTotalAllocatedBytes();
     for (auto ring : rings)
     {
         if (ring != nullptr)
@@ -170,6 +178,17 @@ void GlobalStaticBufferPool::Reset()
         }
     }
     rings.clear();
+    BufferPoolStats::Instance().RecordUnregistration(BufferPoolStatsMode::Static, allocatedBytes);
+    for (const auto &column : buffers)
+    {
+        for (const auto &threadBuffers : column.second)
+        {
+            for (const auto &buffer : threadBuffers)
+            {
+                BufferPoolStats::Instance().RecordFree(BufferPoolStatsMode::Static, buffer->size());
+            }
+        }
+    }
     buffers.clear();
     columnIndexes.clear();
     columnNames.clear();

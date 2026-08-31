@@ -27,6 +27,7 @@
 #include "profiler/CountProfiler.h"
 #include "profiler/TimeProfiler.h"
 #include "physical/BufferPoolMode.h"
+#include "physical/BufferPoolStats.h"
 #include "physical/DynamicBufferPool.h"
 #include "physical/GlobalStaticBufferPool.h"
 #include "physical/natives/DirectUringRandomAccessFileDynamic.h"
@@ -521,6 +522,10 @@ bool PixelsRecordReaderImpl::read()
                 else if (buffer->size() < bufferSize)
                 {
                     buffer = ::DynamicBufferPool::GrowBuffer(bufferKey, bufferSize);
+                }
+                else
+                {
+                    ::BufferPoolStats::Instance().RecordReuse(BufferPoolStatsMode::Dynamic);
                 }
                 originalByteBuffers.emplace_back(buffer);
                 requestBatch.add(queryId, chunk.offset, chunk.length,
