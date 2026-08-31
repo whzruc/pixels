@@ -23,6 +23,7 @@
  * @create 2026-01-23
  */
 #include "physical/DynamicBufferPool.h"
+#include "physical/BufferPoolStats.h"
 #include "utils/ConfigFactory.h"
 #include <cerrno>
 #include <cstring>
@@ -143,6 +144,8 @@ std::shared_ptr<ByteBuffer> DynamicBufferPool::AllocateBuffer(uint32_t colId, ui
     }
 
     currentUsedSlots++;
+    BufferPoolStats::Instance().RecordAllocation(BufferPoolStatsMode::Dynamic, buffer->size());
+    BufferPoolStats::Instance().RecordRegistrationUpdate(BufferPoolStatsMode::Dynamic, 0, buffer->size());
 
     return buffer;
 }
@@ -193,6 +196,7 @@ std::shared_ptr<ByteBuffer> DynamicBufferPool::GrowBuffer(uint32_t colId, uint64
 
     if (newSize <= oldBuffer->size())
     {
+        BufferPoolStats::Instance().RecordReuse(BufferPoolStatsMode::Dynamic);
         return oldBuffer;
     }
 
@@ -209,6 +213,11 @@ std::shared_ptr<ByteBuffer> DynamicBufferPool::GrowBuffer(uint32_t colId, uint64
         throw InvalidArgumentException("DynamicBufferPool::GrowBuffer: failed to update buffer registration");
     }
     bufferSlots[slotIndex] = newBuffer;
+    BufferPoolStats::Instance().RecordFree(BufferPoolStatsMode::Dynamic, oldBuffer->size());
+    BufferPoolStats::Instance().RecordAllocation(BufferPoolStatsMode::Dynamic, newBuffer->size());
+    BufferPoolStats::Instance().RecordRegistrationUpdate(BufferPoolStatsMode::Dynamic, oldBuffer->size(),
+                                                         newBuffer->size());
+    BufferPoolStats::Instance().RecordGrowth(BufferPoolStatsMode::Dynamic);
 
     return newBuffer;
 }
@@ -222,6 +231,7 @@ void DynamicBufferPool::ReleaseBuffer(uint32_t colId)
     }
 
     uint32_t slotIndex = it->second;
+    uint64_t bufferSize = bufferSlots[slotIndex] == nullptr ? 0 : bufferSlots[slotIndex]->size();
 
     struct iovec nullIov;
     nullIov.iov_base = nullptr;
@@ -238,6 +248,8 @@ void DynamicBufferPool::ReleaseBuffer(uint32_t colId)
     slotToCol.erase(slotIndex);
     colToSlot.erase(colId);
     FreeSlot(slotIndex);
+    BufferPoolStats::Instance().RecordUnregistration(BufferPoolStatsMode::Dynamic, bufferSize);
+    BufferPoolStats::Instance().RecordFree(BufferPoolStatsMode::Dynamic, bufferSize);
 
     if (currentUsedSlots > 0)
     {
@@ -258,9 +270,25 @@ void DynamicBufferPool::Reset()
         return;
     }
 
+    uint64_t allocatedBytes = 0;
+    for (const auto &buffer : bufferSlots)
+    {
+        if (buffer != nullptr)
+        {
+            allocatedBytes += buffer->size();
+        }
+    }
     if (ring != nullptr)
     {
         io_uring_unregister_buffers(ring);
+    }
+    BufferPoolStats::Instance().RecordUnregistration(BufferPoolStatsMode::Dynamic, allocatedBytes);
+    for (const auto &buffer : bufferSlots)
+    {
+        if (buffer != nullptr)
+        {
+            BufferPoolStats::Instance().RecordFree(BufferPoolStatsMode::Dynamic, buffer->size());
+        }
     }
 
     bufferSlots.clear();

@@ -23,6 +23,7 @@
  * @create 2023-05-28
  */
 #include "physical/natives/DirectUringRandomAccessFile.h"
+#include "physical/BufferPoolStats.h"
 #include "profiler/TimeProfiler.h"
 
 #include <duckdb/storage/buffer/buffer_pool.hpp>
@@ -75,6 +76,10 @@ void DirectUringRandomAccessFile::RegisterBufferFromPool(
             throw InvalidArgumentException(
                 "DirectUringRandomAccessFile::RegisterBufferFromPool: register "
                 "buffer fails. ");
+        }
+        for (const auto &buffer : tmpBuffers)
+        {
+            BufferPoolStats::Instance().RecordRegistration(BufferPoolStatsMode::Legacy, buffer->size());
         }
         isRegistered = true;
     }
@@ -165,6 +170,10 @@ bool DirectUringRandomAccessFile::RegisterMoreBuffer(
         throw InvalidArgumentException(
             "DirectUringRandomAccessFile::RegisterMoreBuffer: register buffer "
             "fails. ");
+    }
+    for (const auto &buffer : buffers)
+    {
+        BufferPoolStats::Instance().RecordRegistration(BufferPoolStatsMode::Legacy, buffer->size());
     }
     return true;
 }

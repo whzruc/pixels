@@ -23,6 +23,7 @@
  * @create 2023-05-25
  */
 #include "physical/BufferPool.h"
+#include "physical/BufferPoolStats.h"
 #include <chrono>
 #include <duckdb/storage/buffer/buffer_pool.hpp>
 #include <iostream>
@@ -144,6 +145,8 @@ void BufferPool::InitializeBuffers()
         std::shared_ptr<BufferPoolEntry> buffer_pool_entry =
             std::make_shared<BufferPoolEntry>(size_, sliceSize, directIoLib, idx,
                                               0);
+        BufferPoolStats::Instance().RecordAllocation(BufferPoolStatsMode::Legacy,
+                                                     buffer_pool_entry->getBuffer()->size());
         registeredBuffers[idx].emplace_back(buffer_pool_entry);
         buffer_pool_entry->setInUse(true);
         globalFreeSize += size_;
@@ -274,6 +277,7 @@ std::shared_ptr<ByteBuffer> BufferPool::GetBuffer(uint32_t colId, uint64_t byte,
             byte)
         {
             // Reuse the previous buffer
+            BufferPoolStats::Instance().RecordReuse(BufferPoolStatsMode::Legacy);
             return previousBuffer;
         }
         else
@@ -324,6 +328,9 @@ std::shared_ptr<BufferPoolEntry> BufferPool::AddNewBuffer(size_t size)
     std::shared_ptr<BufferPoolEntry> buffer_pool_entry =
         std::make_shared<BufferPoolEntry>(size, sliceSize, directIoLib,
                                           currBufferIdx, nextRingIndex++);
+    BufferPoolStats::Instance().RecordAllocation(BufferPoolStatsMode::Legacy,
+                                                 buffer_pool_entry->getBuffer()->size());
+    BufferPoolStats::Instance().RecordGrowth(BufferPoolStatsMode::Legacy);
     registeredBuffers[currBufferIdx].emplace_back(buffer_pool_entry);
     buffer_pool_entry->setInUse(true);
     globalFreeSize += size;
