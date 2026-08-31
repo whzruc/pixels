@@ -87,6 +87,8 @@ void GlobalStaticBufferPool::Initialize(const std::string &columnSizePath, int b
         int ret = io_uring_queue_init(4096, rings[threadId], 0);
         if (ret < 0)
         {
+            delete rings[threadId];
+            rings[threadId] = nullptr;
             throw InvalidArgumentException("GlobalStaticBufferPool::Initialize: failed to initialize io_uring");
         }
         std::vector<struct iovec> iovecs(columnNames.size() * 2);

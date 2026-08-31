@@ -16,6 +16,13 @@
 
 TEST(GlobalStaticBufferPoolTest, AllocatesRegisteredDoubleBuffers)
 {
+    struct io_uring probeRing{};
+    if (io_uring_queue_init(2, &probeRing, 0) < 0)
+    {
+        GTEST_SKIP() << "io_uring is unavailable";
+    }
+    io_uring_queue_exit(&probeRing);
+
     const std::string sizePath = "/tmp/pixels-static-buffer-pool-test.csv";
     {
         std::ofstream output(sizePath);
