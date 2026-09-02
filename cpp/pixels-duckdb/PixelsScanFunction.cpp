@@ -564,13 +564,12 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
     }
   if (scan_data.next_file_index < StorageInstance->getFileSum(scan_data.deviceID))
     {
-      auto footerCache = std::make_shared<PixelsFooterCache>();
       auto builder = std::make_shared<PixelsReaderBuilder>();
       std::shared_ptr<::Storage> storage = StorageFactory::getInstance()->getStorage(::Storage::file);
       scan_data.next_file_name = StorageInstance->getFileName(scan_data.deviceID, scan_data.next_file_index);
       scan_data.nextReader = builder->setPath(scan_data.next_file_name)
           ->setStorage(storage)
-          ->setPixelsFooterCache(footerCache)
+          ->setPixelsFooterCache(parallel_state.footerCache)
           ->build();
     PixelsReaderOption option = GetPixelsReaderOption(scan_data, parallel_state);
     scan_data.nextPixelsRecordReader = scan_data.nextReader->read(std::move(option));

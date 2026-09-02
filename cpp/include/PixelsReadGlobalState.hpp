@@ -31,6 +31,7 @@
 #include "duckdb/function/scalar_function.hpp"
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include "PixelsReader.h"
+#include "PixelsFooterCache.h"
 #include "physical/StorageArrayScheduler.h"
 #include "profiler/TimeProfiler.h"
 
@@ -45,6 +46,9 @@ namespace duckdb
         }
 
         mutex lock;
+
+        // Shared by every file reader and scan thread in this query.
+        std::shared_ptr<PixelsFooterCache> footerCache = std::make_shared<PixelsFooterCache>();
 
         atomic<int> active_threads; // Number of active threads
         atomic<bool> all_done; // Whether all threads have completed

@@ -24,21 +24,28 @@
  */
 #include "PixelsFooterCache.h"
 #include "exception/InvalidArgumentException.h"
+#include <mutex>
 
 PixelsFooterCache::PixelsFooterCache()
 {
 }
 
-void PixelsFooterCache::putFileTail(const std::string &id, const pixels::fb::FileTail* fileTail)
+const pixels::fb::FileTail *PixelsFooterCache::putFileTailIfAbsent(
+        const std::string &id, std::shared_ptr<ByteBuffer> buffer,
+        const pixels::fb::FileTail *fileTail)
 {
-    fileTailCacheMap[id] = fileTail;
+    std::unique_lock lock(mutex_);
+    auto result = fileTailCacheMap.emplace(id, FileTailEntry{std::move(buffer), fileTail});
+    return result.first->second.fileTail;
 }
 
 const pixels::fb::FileTail* PixelsFooterCache::getFileTail(const std::string &id)
 {
-    if (fileTailCacheMap.find(id) != fileTailCacheMap.end())
+    std::shared_lock lock(mutex_);
+    auto it = fileTailCacheMap.find(id);
+    if (it != fileTailCacheMap.end())
     {
-        return fileTailCacheMap[id];
+        return it->second.fileTail;
     }
     else
     {
@@ -46,21 +53,28 @@ const pixels::fb::FileTail* PixelsFooterCache::getFileTail(const std::string &id
     }
 }
 
-void PixelsFooterCache::putRGFooter(const std::string &id, const pixels::fb::RowGroupFooter* footer)
+const pixels::fb::RowGroupFooter *PixelsFooterCache::putRGFooterIfAbsent(
+        const std::string &id, std::shared_ptr<ByteBuffer> buffer,
+        const pixels::fb::RowGroupFooter *footer)
 {
-    rowGroupFooterCacheMap[id] = footer;
+    std::unique_lock lock(mutex_);
+    auto result = rowGroupFooterCacheMap.emplace(id, RGFooterEntry{std::move(buffer), footer});
+    return result.first->second.footer;
 }
 
 bool PixelsFooterCache::containsFileTail(const std::string &id)
 {
+    std::shared_lock lock(mutex_);
     return fileTailCacheMap.find(id) != fileTailCacheMap.end();
 }
 
 const pixels::fb::RowGroupFooter* PixelsFooterCache::getRGFooter(const std::string &id)
 {
-    if (rowGroupFooterCacheMap.find(id) != rowGroupFooterCacheMap.end())
+    std::shared_lock lock(mutex_);
+    auto it = rowGroupFooterCacheMap.find(id);
+    if (it != rowGroupFooterCacheMap.end())
     {
-        return rowGroupFooterCacheMap[id];
+        return it->second.footer;
     }
     else
     {
@@ -70,5 +84,6 @@ const pixels::fb::RowGroupFooter* PixelsFooterCache::getRGFooter(const std::stri
 
 bool PixelsFooterCache::containsRGFooter(const std::string &id)
 {
+    std::shared_lock lock(mutex_);
     return rowGroupFooterCacheMap.find(id) != rowGroupFooterCacheMap.end();
 }

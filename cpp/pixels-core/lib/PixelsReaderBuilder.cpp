@@ -59,12 +59,18 @@ std::shared_ptr<PixelsReader> PixelsReaderBuilder::build()
     // get PhysicalReader
     std::shared_ptr<PhysicalReader> fsReader =
             PhysicalReaderUtil::newPhysicalReader (builderStorage, builderPath);
+    // Even callers that do not request cross-reader caching need an owner for
+    // FlatBuffer backing memory during the returned reader's lifetime.
+    auto footerCache = builderPixelsFooterCache != nullptr
+                       ? builderPixelsFooterCache
+                       : std::make_shared<PixelsFooterCache>();
     // try to get file tail from cache
-    std::string fileName = fsReader->getName ();
+    // Basenames are not unique across storage roots.
+    std::string fileName = builderPath;
     const pixels::fb::FileTail* fileTail;
-    if (builderPixelsFooterCache != nullptr && builderPixelsFooterCache->containsFileTail (fileName))
+    if (footerCache->containsFileTail (fileName))
     {
-        fileTail = builderPixelsFooterCache->getFileTail (fileName);
+        fileTail = footerCache->getFileTail (fileName);
     } else
     {
         if (fsReader.get () == nullptr)
@@ -95,10 +101,7 @@ std::shared_ptr<PixelsReader> PixelsReaderBuilder::build()
         {
             throw InvalidArgumentException ("PixelsReaderBuilder::build: parsing FileTail error!");
         }
-        if (builderPixelsFooterCache != nullptr)
-        {
-            builderPixelsFooterCache->putFileTail (fileName, fileTail);
-        }
+        fileTail = footerCache->putFileTailIfAbsent(fileName, fileTailBuffer, fileTail);
     }
 
     // check file MAGIC and file version
@@ -123,6 +126,5 @@ std::shared_ptr<PixelsReader> PixelsReaderBuilder::build()
 
     // TODO: the remaining things, such as builderSchema, coreCOnfig, metric
 
-    return std::make_shared<PixelsReaderImpl> (builderSchema, fsReader, fileTail,
-                                               builderPixelsFooterCache);
+    return std::make_shared<PixelsReaderImpl> (builderSchema, fsReader, fileTail, footerCache);
 }
