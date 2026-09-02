@@ -26,6 +26,7 @@
 #include "physical/natives/DirectRandomAccessFile.h"
 #include "physical/natives/DirectUringRandomAccessFile.h"
 #include "physical/natives/DirectUringRandomAccessFileDynamic.h"
+#include "physical/natives/DirectUringRandomAccessFileNonFixed.h"
 #include "physical/natives/DirectUringRandomAccessFileStatic.h"
 #include "physical/GlobalStaticBufferPool.h"
 #include "physical/BufferPoolMode.h"
@@ -70,6 +71,10 @@ std::shared_ptr <PixelsRandomAccessFile> LocalFS::openRaf(const std::string &pat
     if (GetBufferPoolMode() == BufferPoolMode::Dynamic)
     {
         return std::make_shared<DirectUringRandomAccessFileDynamic>(path);
+    }
+    if (GetBufferPoolMode() == BufferPoolMode::NonFixed)
+    {
+        return std::make_shared<DirectUringRandomAccessFileNonFixed>(path);
     }
     if (GetBufferPoolMode() == BufferPoolMode::Static)
     {

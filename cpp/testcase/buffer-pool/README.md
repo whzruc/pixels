@@ -1,8 +1,9 @@
 # C++ Buffer Pool Validation
 
-The C++ reader supports three values for `pixel.bufferpool.mode`:
+The C++ reader supports four values for `pixel.bufferpool.mode`:
 
-- `legacy`: the existing buffer pool and io_uring registration path.
+- `legacy`: the existing registered-buffer path using fixed reads.
+- `non-fixed`: the legacy allocator without io_uring buffer registration.
 - `dynamic`: thread-local buffers allocated and registered on demand.
 - `static`: per-column double buffers preallocated for a bounded number of scan threads.
 
@@ -11,7 +12,7 @@ The static pool uses `pixel.column.size.path` to size each column buffer and
 Set `pixel.static.buffer.hugepage=true` to request transparent HugePages with
 `MADV_HUGEPAGE`. This is an advisory optimization and requires Linux support.
 
-Build the project, then compare the three modes with the same ClickBench data:
+Build the project, then validate the registered pool modes with the same ClickBench data:
 
 ```bash
 testcase/buffer-pool/validate-clickbench.sh \

@@ -26,6 +26,7 @@
 #include "physical/StorageArrayScheduler.h"
 #include "physical/BufferPoolMode.h"
 #include "physical/natives/DirectUringRandomAccessFileDynamic.h"
+#include "physical/natives/DirectUringRandomAccessFileNonFixed.h"
 #include "profiler/CountProfiler.h"
 
 /// @brief 
@@ -278,7 +279,14 @@ unique_ptr<LocalTableFunctionState> PixelsScanFunction::PixelsScanInitLocal(
       }
     }
 
-  ::DirectUringRandomAccessFile::Initialize();
+  if (GetBufferPoolMode() == BufferPoolMode::Legacy)
+    {
+    ::DirectUringRandomAccessFile::Initialize();
+    }
+  else if (GetBufferPoolMode() == BufferPoolMode::NonFixed)
+    {
+    ::DirectUringRandomAccessFileNonFixed::Initialize();
+    }
   if (!PixelsParallelStateNext(context.client, bind_data, *result, gstate, true))
     {
     return nullptr;
@@ -480,10 +488,15 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
       {
       ::DirectUringRandomAccessFileDynamic::Reset();
       }
+    else if (GetBufferPoolMode() == BufferPoolMode::NonFixed)
+      {
+      ::DirectUringRandomAccessFileNonFixed::Reset();
+      }
     int remaining_threads = --parallel_state.active_threads;
     if (remaining_threads == 0 && !parallel_state.all_done)
       {
-      if (GetBufferPoolMode() == BufferPoolMode::Legacy)
+      if (GetBufferPoolMode() == BufferPoolMode::Legacy ||
+          GetBufferPoolMode() == BufferPoolMode::NonFixed)
         {
         ::BufferPool::Reset();
         }
@@ -495,6 +508,10 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
           if (GetBufferPoolMode() == BufferPoolMode::Legacy)
             {
             ::DirectUringRandomAccessFile::Reset();
+            }
+          else if (GetBufferPoolMode() == BufferPoolMode::NonFixed)
+            {
+            ::DirectUringRandomAccessFileNonFixed::Reset();
             }
         } else if (ConfigFactory::Instance().getProperty("localfs.async.lib") == "aio")
         {
