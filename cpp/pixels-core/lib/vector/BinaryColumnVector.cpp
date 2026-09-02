@@ -23,13 +23,17 @@
  * @create 2023-03-17
  */
 #include "vector/BinaryColumnVector.h"
+#include "vector/ColumnVectorBufferPool.h"
 #include <cstdint>
 #include <cstring>
 
 BinaryColumnVector::BinaryColumnVector(uint64_t len, bool encoding) : ColumnVector(len, encoding)
 {
-  posix_memalign(reinterpret_cast<void **>(&vector), 32,len * sizeof(pixels::string_t));
-  str_vec.resize(len);
+  vectorBytes = len * sizeof(pixels::string_t);
+  vector = reinterpret_cast<pixels::string_t *>(
+      ColumnVectorBufferPool::acquire(vectorBytes, 32));
+  if (vector == nullptr) throw std::bad_alloc();
+  if (!ColumnVectorBufferPool::enabled()) str_vec.resize(len);
   memoryUsage += (long) sizeof(uint8_t) * len;
 }
 
@@ -38,8 +42,9 @@ void BinaryColumnVector::close()
   if (!closed)
   {
     ColumnVector::close();
-    free(vector);
+    ColumnVectorBufferPool::release(vector, vectorBytes, 32);
     vector = nullptr;
+    vectorBytes = 0;
   }
 }
 
@@ -101,6 +106,7 @@ void BinaryColumnVector::setVal(int elementNum, uint8_t *sourceBuf, int start, i
 {
   vector[elementNum] = pixels::string_t(reinterpret_cast<char *>(sourceBuf + start), length);
   isNull[elementNum] = false;
+  if (str_vec.size() < this->length) str_vec.resize(this->length);
   str_vec[elementNum] = std::string(reinterpret_cast<char *>(sourceBuf + start), length);
   //std::cout<<"add str "<<str_vec[elementNum]<<std::endl;
 }
@@ -111,13 +117,17 @@ void BinaryColumnVector::ensureSize(uint64_t size, bool preserveData)
   if (length < size)
   {
     pixels::string_t *oldVector = vector;
-    posix_memalign(reinterpret_cast<void **>(&vector), 32, size * sizeof(pixels::string_t));
+    size_t oldVectorBytes = vectorBytes;
+    vectorBytes = size * sizeof(pixels::string_t);
+    vector = reinterpret_cast<pixels::string_t *>(
+        ColumnVectorBufferPool::acquire(vectorBytes, 32));
+    if (vector == nullptr) throw std::bad_alloc();
     str_vec.resize(size);
     if (preserveData)
     {
       std::copy(oldVector, oldVector + length, vector);
     }
-    delete[] oldVector;
+    ColumnVectorBufferPool::release(oldVector, oldVectorBytes, 32);
     memoryUsage += (long) sizeof(pixels::string_t) * (size - length);
     resize(size);
   }

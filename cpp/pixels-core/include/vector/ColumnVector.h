@@ -75,6 +75,8 @@ public:
      * later and nulls added.
      */
     uint8_t *isNull;
+    bool ownsIsNull;
+    bool ownsData;
 
     // If the whole column vector has no nulls, this is true, otherwise false.
     bool noNulls;

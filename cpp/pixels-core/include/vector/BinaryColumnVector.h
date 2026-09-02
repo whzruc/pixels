@@ -39,6 +39,7 @@ class BinaryColumnVector : public ColumnVector
  public:
   pixels::string_t *vector;
   std::vector<std::string> str_vec;
+  size_t vectorBytes;
   explicit BinaryColumnVector(uint64_t len = VectorizedRowBatch::DEFAULT_SIZE, bool encoding = false);
   ~BinaryColumnVector();
   void setRef(int elementNum, uint8_t *const &sourceBuf, int start, int length);

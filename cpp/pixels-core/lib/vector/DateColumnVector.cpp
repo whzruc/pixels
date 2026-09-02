@@ -39,7 +39,7 @@ void DateColumnVector::close()
 {
     if (!closed)
     {
-        if (encoding && dates != nullptr)
+        if (ownsData && dates != nullptr)
         {
             free (dates);
         }

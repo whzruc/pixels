@@ -39,7 +39,7 @@ void LongColumnVector::close()
     if (!closed)
     {
         ColumnVector::close ();
-        if (encoding && longVector != nullptr)
+        if (ownsData && longVector != nullptr)
         {
             free (longVector);
         }
