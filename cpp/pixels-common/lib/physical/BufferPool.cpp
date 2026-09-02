@@ -23,6 +23,7 @@
  * @create 2023-05-25
  */
 #include "physical/BufferPool.h"
+#include "physical/BufferPoolMode.h"
 #include <chrono>
 #include <duckdb/storage/buffer/buffer_pool.hpp>
 #include <iostream>
@@ -201,8 +202,9 @@ std::shared_ptr<ByteBuffer> BufferPool::AllocateNewBuffer(
             currentBuffer = BufferPool::AddNewBuffer(currentBuffer->getSize());
             std::vector<std::shared_ptr<ByteBuffer>> buffers;
             buffers.emplace_back(currentBuffer->getBuffer());
-            if (!::DirectUringRandomAccessFile::RegisterMoreBuffer(
-                currentBuffer->getRingIndex(), buffers))
+            if (GetBufferPoolMode() == BufferPoolMode::Legacy &&
+                !::DirectUringRandomAccessFile::RegisterMoreBuffer(
+                    currentBuffer->getRingIndex(), buffers))
             {
                 throw std::runtime_error("Failed to register more buffers");
             }

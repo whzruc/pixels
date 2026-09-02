@@ -30,6 +30,7 @@
 #include "physical/DynamicBufferPool.h"
 #include "physical/GlobalStaticBufferPool.h"
 #include "physical/natives/DirectUringRandomAccessFileDynamic.h"
+#include "physical/natives/DirectUringRandomAccessFileNonFixed.h"
 std::mutex PixelsRecordReaderImpl::mutex_;
 PixelsRecordReaderImpl::PixelsRecordReaderImpl(std::shared_ptr <PhysicalReader> reader,
                                                const pixels::fb::PostScript *pixelsPostScript,
@@ -562,7 +563,14 @@ bool PixelsRecordReaderImpl::read()
         else
         {
             ::BufferPool::Initialize(colIds, bytes, columnNames);
-            ::DirectUringRandomAccessFile::RegisterBufferFromPool(colIds);
+            if (GetBufferPoolMode() == BufferPoolMode::Legacy)
+            {
+                ::DirectUringRandomAccessFile::RegisterBufferFromPool(colIds);
+            }
+            else
+            {
+                ::DirectUringRandomAccessFileNonFixed::Initialize();
+            }
             for (int i = 0; i < colIds.size(); i++)
             {
                 auto colId = colIds.at(i);
@@ -571,13 +579,17 @@ bool PixelsRecordReaderImpl::read()
                 originalByteBuffers.emplace_back(currentBufferEntry);
                 requestBatch.add(queryId, diskChunks.at(i).offset, diskChunks.at(i).length,
                                  ::BufferPool::GetBufferId());
-                requestBatch.getRequest(i).ringIndex = ::BufferPool::getRingIndex(colId);
+                if (GetBufferPoolMode() == BufferPoolMode::Legacy)
+                {
+                    requestBatch.getRequest(i).ringIndex = ::BufferPool::getRingIndex(colId);
+                }
                 if (currentBufferEntry->size() - requestBatch.getRequest(i).length <= 4096)
                 {
                     throw InvalidArgumentException(
                         "PixelsRecordReaderImpl::read: insufficient buffer capacity");
                 }
-                if (requestBatch.getRequest(i).ringIndex != 0)
+                if (GetBufferPoolMode() == BufferPoolMode::Legacy &&
+                    requestBatch.getRequest(i).ringIndex != 0)
                 {
                     requestBatch.getRequest(i).bufferId = 0;
                     ring_col.emplace_back(i);

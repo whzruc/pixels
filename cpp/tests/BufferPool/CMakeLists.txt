@@ -34,3 +34,21 @@ target_include_directories(GlobalStaticBufferPoolTest PRIVATE
         ${PROJECT_SOURCE_DIR}/pixels-common/include
         ${CMAKE_CURRENT_BINARY_DIR}/../../pixels-common/liburing/src/include
 )
+
+add_executable(
+        DirectUringNonFixedTest
+        DirectUringNonFixedTest.cpp
+)
+
+target_link_libraries(
+        DirectUringNonFixedTest
+        PRIVATE
+        gtest_main
+        pixels-common
+)
+
+target_include_directories(DirectUringNonFixedTest PRIVATE
+        ${GTEST_DIR}/googletest/include
+        ${PROJECT_SOURCE_DIR}/pixels-common/include
+        ${CMAKE_CURRENT_BINARY_DIR}/../../pixels-common/liburing/src/include
+)
