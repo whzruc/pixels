@@ -30,8 +30,8 @@ def replace_property(text, key, value):
     return "\n".join(lines) + "\n"
 
 
-def prepare_home(output, base_config, mode, threads, column_sizes):
-    home = output / "homes" / f"t{threads}" / mode
+def prepare_home(output, base_config, mode, threads, column_sizes, column_vector_pool):
+    home = output / "homes" / f"t{threads}" / mode / f"column-pool-{column_vector_pool}"
     config = home / "cpp" / "etc" / "pixels-cpp.properties"
     config.parent.mkdir(parents=True, exist_ok=True)
     text = base_config.read_text()
@@ -40,12 +40,14 @@ def prepare_home(output, base_config, mode, threads, column_sizes):
     text = replace_property(text, "pixel.static.buffer.threads", str(threads))
     text = replace_property(text, "pixel.column.size.path", str(column_sizes))
     text = replace_property(text, "pixel.enable.profiler", "false")
+    text = replace_property(text, "pixels.columnvector.pool", column_vector_pool)
     config.write_text(text)
     return home
 
 
-def run_query(args, threads, mode, repeat, measured):
-    home = prepare_home(args.output, args.base_config, mode, threads, args.column_sizes)
+def run_query(args, threads, mode, column_vector_pool, repeat, measured):
+    home = prepare_home(args.output, args.base_config, mode, threads, args.column_sizes,
+                        column_vector_pool)
     pixels_sources = ", ".join(
         "'" + pixels_glob.replace("'", "''") + "'" for pixels_glob in args.pixels_globs
     )
@@ -61,7 +63,8 @@ def run_query(args, threads, mode, repeat, measured):
                                timeout=args.timeout)
     elapsed = time.perf_counter() - started
     phase = "run" if measured else "warmup"
-    raw = args.output / "raw" / f"t{threads}-{mode}-{phase}-{repeat}"
+    raw = args.output / "raw" / (f"t{threads}-{mode}-column-pool-{column_vector_pool}-"
+                                  f"{phase}-{repeat}")
     raw.parent.mkdir(parents=True, exist_ok=True)
     raw.with_suffix(".out").write_text(completed.stdout)
     raw.with_suffix(".err").write_text(completed.stderr)
@@ -112,6 +115,8 @@ def main():
     parser.add_argument("--threads", nargs="+", type=int, default=[12, 24, 48])
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--modes", nargs="+", choices=VALID_MODES, default=list(DEFAULT_MODES))
+    parser.add_argument("--column-vector-pool", nargs="+", choices=("true", "false"),
+                        default=["true"])
     parser.add_argument("--seed", type=int, default=1392)
     parser.add_argument("--timeout", type=int, default=14400)
     parser.add_argument("--output", required=True, type=Path)
@@ -124,8 +129,8 @@ def main():
     args.output = args.output.resolve()
     args.repo_root = cpp_root.parent
 
-    if args.repeats < 5:
-        parser.error("--repeats must be at least 5 for the significance check")
+    if args.repeats <= 0:
+        parser.error("--repeats must be positive")
     if any(threads <= 0 for threads in args.threads):
         parser.error("--threads values must be positive")
     if len(set(args.threads)) != len(args.threads):
@@ -143,30 +148,35 @@ def main():
 
     for threads in args.threads:
         for mode in args.modes:
-            run_query(args, threads, mode, 0, measured=False)
+            for column_vector_pool in args.column_vector_pool:
+                run_query(args, threads, mode, column_vector_pool, 0, measured=False)
 
     schedule = [
-        (threads, mode, repeat)
+        (threads, mode, column_vector_pool, repeat)
         for threads in args.threads
         for repeat in range(1, args.repeats + 1)
         for mode in args.modes
+        for column_vector_pool in args.column_vector_pool
     ]
     random.Random(args.seed).shuffle(schedule)
     rows = []
     expected_hashes = {}
-    for threads, mode, repeat in schedule:
-        elapsed, digest = run_query(args, threads, mode, repeat, measured=True)
+    for threads, mode, column_vector_pool, repeat in schedule:
+        elapsed, digest = run_query(args, threads, mode, column_vector_pool, repeat,
+                                    measured=True)
         expected_hash = expected_hashes.setdefault(threads, digest)
         if digest != expected_hash:
             raise RuntimeError(
                 f"result hash mismatch for threads={threads} {mode} repeat {repeat}"
             )
-        rows.append((threads, mode, repeat, elapsed, digest))
-        print(f"threads={threads} {mode} repeat={repeat} elapsed={elapsed:.6f}s")
+        rows.append((threads, mode, column_vector_pool, repeat, elapsed, digest))
+        print(f"threads={threads} {mode} column_pool={column_vector_pool} "
+              f"repeat={repeat} elapsed={elapsed:.6f}s")
 
     with (args.output / "timings.csv").open("w", newline="") as output:
         writer = csv.writer(output, lineterminator="\n")
-        writer.writerow(("threads", "mode", "repeat", "elapsed_seconds", "sha256"))
+        writer.writerow(("threads", "mode", "column_vector_pool", "repeat",
+                         "elapsed_seconds", "sha256"))
         writer.writerows(rows)
 
     with (args.output / "summary.csv").open("w", newline="") as output:
@@ -176,8 +186,10 @@ def main():
                          "second_speedup", "first_mad_seconds", "second_mad_seconds",
                          "permutation_p_value", "clear_difference"))
         for threads in args.threads:
+            if len(args.column_vector_pool) != 1:
+                continue
             samples = {
-                mode: [row[3] for row in rows if row[0] == threads and row[1] == mode]
+                mode: [row[4] for row in rows if row[0] == threads and row[1] == mode]
                 for mode in args.modes
             }
             for first, second in itertools.combinations(args.modes, 2):
@@ -194,6 +206,29 @@ def main():
                 print(f"threads={threads} {first} vs {second}: "
                       f"speedup={first_median / second_median:.3f} "
                       f"p={p_value:.4f} clear={clear}")
+
+    if len(args.column_vector_pool) == 2:
+        with (args.output / "column-vector-summary.csv").open("w", newline="") as output:
+            writer = csv.writer(output, lineterminator="\n")
+            writer.writerow(("threads", "mode", "disabled_median_seconds",
+                             "enabled_median_seconds", "enabled_speedup",
+                             "disabled_mad_seconds", "enabled_mad_seconds",
+                             "permutation_p_value"))
+            for threads in args.threads:
+                for mode in args.modes:
+                    disabled = [row[4] for row in rows if row[0] == threads and
+                                row[1] == mode and row[2] == "false"]
+                    enabled = [row[4] for row in rows if row[0] == threads and
+                               row[1] == mode and row[2] == "true"]
+                    disabled_median = statistics.median(disabled)
+                    enabled_median = statistics.median(enabled)
+                    writer.writerow((threads, mode, disabled_median, enabled_median,
+                                     disabled_median / enabled_median,
+                                     median_absolute_deviation(disabled),
+                                     median_absolute_deviation(enabled),
+                                     permutation_p_value(disabled, enabled)))
+                    print(f"threads={threads} {mode} column pool speedup="
+                          f"{disabled_median / enabled_median:.3f}")
 
 
 if __name__ == "__main__":

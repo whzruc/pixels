@@ -70,7 +70,9 @@ TimestampColumnReader::read(std::shared_ptr <ByteBuffer> input,
     }
     else
     {
+        if (columnVector->ownsData) free(columnVector->times);
         columnVector->times = (int64_t * )(input->getPointer() + input->getReadPos());
+        columnVector->ownsData = false;
         input->setReadPos(input->getReadPos() + size * sizeof(int64_t));
     }
 }

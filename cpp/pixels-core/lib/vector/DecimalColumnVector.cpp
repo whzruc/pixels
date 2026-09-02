@@ -63,11 +63,8 @@ void DecimalColumnVector::close()
     {
         ColumnVector::close();
 
-        if (physical_type_ == pixels::PhysicalType::INT16 ||
-            physical_type_ == pixels::PhysicalType::INT32)
-        {
-            free (vector);
-        }
+        if (ownsData) free(vector);
+        vector = nullptr;
 
         closed = true;
     }

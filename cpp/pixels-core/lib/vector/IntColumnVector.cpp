@@ -39,7 +39,7 @@ void IntColumnVector::close()
     if (!closed)
     {
         ColumnVector::close ();
-        if (encoding && intVector != nullptr)
+        if (ownsData && intVector != nullptr)
         {
             free (intVector);
         }

@@ -46,7 +46,7 @@ void TimestampColumnVector::close()
     if (!closed)
     {
         ColumnVector::close ();
-        if (encoding && this->times != nullptr)
+        if (ownsData && this->times != nullptr)
         {
             free (this->times);
         }

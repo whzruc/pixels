@@ -52,3 +52,21 @@ target_include_directories(DirectUringNonFixedTest PRIVATE
         ${PROJECT_SOURCE_DIR}/pixels-common/include
         ${CMAKE_CURRENT_BINARY_DIR}/../../pixels-common/liburing/src/include
 )
+
+add_executable(
+        ColumnVectorBufferPoolTest
+        ColumnVectorBufferPoolTest.cpp
+)
+
+target_link_libraries(
+        ColumnVectorBufferPoolTest
+        PRIVATE
+        gtest_main
+        pixels-core
+)
+
+target_include_directories(ColumnVectorBufferPoolTest PRIVATE
+        ${GTEST_DIR}/googletest/include
+        ${PROJECT_SOURCE_DIR}/pixels-common/include
+        ${PROJECT_SOURCE_DIR}/pixels-core/include
+)
