@@ -1,8 +1,9 @@
 # C++ Buffer Pool Validation
 
-The C++ reader supports three values for `pixel.bufferpool.mode`:
+The C++ reader supports four values for `pixel.bufferpool.mode`:
 
-- `legacy`: the existing buffer pool and io_uring registration path.
+- `legacy`: the existing registered-buffer path using fixed reads.
+- `non-fixed`: the legacy allocator without io_uring buffer registration.
 - `dynamic`: thread-local buffers allocated and registered on demand.
 - `static`: per-column double buffers preallocated for a bounded number of scan threads.
 
@@ -24,7 +25,7 @@ they do not include DuckDB operators, column vectors, thread stacks, or other
 process memory. `registrations` counts buffers registered during initialization
 or pool growth, while `registration_updates` counts dynamic slot updates.
 
-Build the project, then compare the three modes with the same ClickBench data:
+Build the project, then validate the registered pool modes with the same ClickBench data:
 
 ```bash
 testcase/buffer-pool/validate-clickbench.sh \

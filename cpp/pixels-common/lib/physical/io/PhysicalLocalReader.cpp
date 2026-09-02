@@ -26,10 +26,24 @@
 #include "physical/io/PhysicalLocalReader.h"
 #include "physical/BufferPoolMode.h"
 #include "physical/natives/DirectUringRandomAccessFileDynamic.h"
+#include "physical/natives/DirectUringRandomAccessFileNonFixed.h"
 #include "physical/natives/DirectUringRandomAccessFileStatic.h"
 
 #include <utility>
 #include "profiler/TimeProfiler.h"
+
+namespace
+{
+uint32_t TotalRequests(const std::unordered_map<int, uint32_t> &sizes)
+{
+    uint32_t count = 0;
+    for (const auto &size : sizes)
+    {
+        count += size.second;
+    }
+    return count;
+}
+}
 
 PhysicalLocalReader::PhysicalLocalReader(std::shared_ptr<Storage> storage, std::string path_)
 {
@@ -146,6 +160,11 @@ std::shared_ptr<ByteBuffer> PhysicalLocalReader::readAsync(int length, std::shar
             auto directRaf = std::static_pointer_cast<DirectUringRandomAccessFileStatic>(raf);
             return directRaf->readAsync(length, std::move(buffer), index, startOffset);
         }
+        if (GetBufferPoolMode() == BufferPoolMode::NonFixed)
+        {
+            auto directRaf = std::static_pointer_cast<DirectUringRandomAccessFileNonFixed>(raf);
+            return directRaf->readAsync(length, std::move(buffer), startOffset);
+        }
         auto directRaf = std::static_pointer_cast<DirectUringRandomAccessFile>(raf);
         return directRaf->readAsync(length, std::move(buffer), index, ringIndex, startOffset);
     }
@@ -166,24 +185,20 @@ void PhysicalLocalReader::readAsyncSubmit(std::unordered_map<int, uint32_t> size
     {
         if (GetBufferPoolMode() == BufferPoolMode::Dynamic)
         {
-            uint32_t count = 0;
-            for (const auto &size: sizes)
-            {
-                count += size.second;
-            }
             auto directRaf = std::static_pointer_cast<DirectUringRandomAccessFileDynamic>(raf);
-            directRaf->readAsyncSubmit(count);
+            directRaf->readAsyncSubmit(TotalRequests(sizes));
             return;
         }
         if (GetBufferPoolMode() == BufferPoolMode::Static)
         {
-            uint32_t count = 0;
-            for (const auto &size: sizes)
-            {
-                count += size.second;
-            }
             auto directRaf = std::static_pointer_cast<DirectUringRandomAccessFileStatic>(raf);
-            directRaf->readAsyncSubmit(count);
+            directRaf->readAsyncSubmit(TotalRequests(sizes));
+            return;
+        }
+        if (GetBufferPoolMode() == BufferPoolMode::NonFixed)
+        {
+            auto directRaf = std::static_pointer_cast<DirectUringRandomAccessFileNonFixed>(raf);
+            directRaf->readAsyncSubmit(TotalRequests(sizes));
             return;
         }
         auto directRaf = std::static_pointer_cast<DirectUringRandomAccessFile>(raf);
@@ -206,24 +221,20 @@ void PhysicalLocalReader::readAsyncComplete(std::unordered_map<int, uint32_t> si
     {
         if (GetBufferPoolMode() == BufferPoolMode::Dynamic)
         {
-            uint32_t count = 0;
-            for (const auto &size: sizes)
-            {
-                count += size.second;
-            }
             auto directRaf = std::static_pointer_cast<DirectUringRandomAccessFileDynamic>(raf);
-            directRaf->readAsyncComplete(count);
+            directRaf->readAsyncComplete(TotalRequests(sizes));
             return;
         }
         if (GetBufferPoolMode() == BufferPoolMode::Static)
         {
-            uint32_t count = 0;
-            for (const auto &size: sizes)
-            {
-                count += size.second;
-            }
             auto directRaf = std::static_pointer_cast<DirectUringRandomAccessFileStatic>(raf);
-            directRaf->readAsyncComplete(count);
+            directRaf->readAsyncComplete(TotalRequests(sizes));
+            return;
+        }
+        if (GetBufferPoolMode() == BufferPoolMode::NonFixed)
+        {
+            auto directRaf = std::static_pointer_cast<DirectUringRandomAccessFileNonFixed>(raf);
+            directRaf->readAsyncComplete(TotalRequests(sizes));
             return;
         }
         auto directRaf = std::static_pointer_cast<DirectUringRandomAccessFile>(raf);

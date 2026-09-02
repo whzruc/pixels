@@ -18,6 +18,7 @@
 enum class BufferPoolMode
 {
     Legacy,
+    NonFixed,
     Dynamic,
     Static
 };
@@ -32,6 +33,10 @@ inline BufferPoolMode GetBufferPoolMode()
     if (mode == "dynamic")
     {
         return BufferPoolMode::Dynamic;
+    }
+    if (mode == "non-fixed")
+    {
+        return BufferPoolMode::NonFixed;
     }
     if (mode == "static")
     {
