@@ -23,6 +23,7 @@
  * @create 2023-03-26
  */
 #include "PixelsScanFunction.hpp"
+#include "CPUAffinity.h"
 #include "physical/StorageArrayScheduler.h"
 #include "physical/BufferPoolMode.h"
 #include "physical/natives/DirectUringRandomAccessFileDynamic.h"
@@ -52,7 +53,7 @@ static double PixelsProgress(ClientContext &context, const FunctionData *bind_da
     return 100.0;
     }
   auto percentage = bind_data.curFileId * 100.0 / bind_data.files.size();
-  return percentage;
+  return MinValue(percentage, 100.0);
 }
 
 static unique_ptr<NodeStatistics> PixelsCardinality(ClientContext &context, const FunctionData *bind_data)
@@ -94,7 +95,8 @@ void PixelsScanFunction::PixelsScanImplementation(ClientContext &context,
   do
     {
     if (data.currPixelsRecordReader == nullptr ||
-        (data.currPixelsRecordReader->isEndOfFile() && data.vectorizedRowBatch->isEndOfFile()))
+        (data.currPixelsRecordReader->isEndOfFile() &&
+         (data.vectorizedRowBatch == nullptr || data.vectorizedRowBatch->isEndOfFile())))
       {
       if (data.currPixelsRecordReader != nullptr)
         {
@@ -265,7 +267,18 @@ unique_ptr<LocalTableFunctionState> PixelsScanFunction::PixelsScanInitLocal(
 
   auto result = make_uniq<PixelsReadLocalState>();
 
-  result->deviceID = gstate.storageArrayScheduler->acquireDeviceId();
+    result->deviceID = gstate.storageArrayScheduler->acquireDeviceId();
+
+    if (ConfigFactory::Instance().getBoolProperty("pixels.enable.cpu.affinity", false))
+    {
+      auto strategy = ConfigFactory::Instance().getProperty(
+          "pixels.cpu.affinity.strategy", "round-robin");
+      auto mapping = ConfigFactory::Instance().getProperty(
+          "pixels.cpu.affinity.core.mapping", "");
+      static std::atomic<uint64_t> next_worker_id{0};
+      if (!ApplyCPUAffinity(strategy, mapping, next_worker_id.fetch_add(1)))
+        throw InvalidArgumentException("failed to apply Pixels CPU affinity");
+    }
 
   result->column_ids = input.column_ids;
 
@@ -524,7 +537,6 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
     parallel_lock.unlock();
     return false;
     }
-  bind_data.curFileId++;
   scan_data.curr_file_index = scan_data.next_file_index;
   scan_data.curr_batch_index = scan_data.next_batch_index;
   scan_data.next_file_index = parallel_state.file_index.at(scan_data.deviceID);
