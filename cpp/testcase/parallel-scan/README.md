@@ -54,3 +54,12 @@ pixels.cpu.affinity.core.mapping=
 
 Run the same matrix once with affinity disabled and once enabled, using fresh
 output directories. The production default remains disabled.
+
+## Validation result
+
+On 2026-09-03, the complete ClickBench query set (`q01`–`q43`) was executed
+once with six SSD roots and 24 DuckDB worker threads. All 43 queries completed
+successfully with exit status 0; no `io_uring` SQE, queue-full, or I/O errors
+were observed. Q24 was also validated separately on 24 SSDs with 48 threads.
+Raw logs and benchmark data remain local and are intentionally excluded from
+the repository.
