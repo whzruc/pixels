@@ -64,7 +64,9 @@ PixelsRecordReaderImpl::PixelsRecordReaderImpl(std::shared_ptr <PhysicalReader> 
     curRGIdx = 0;
     curRowInRG = 0;
     curRGRowCount = 0;
-    fileName = physicalReader->getName();
+    // Basenames repeat across storage devices; row-group cache keys must use
+    // the complete storage path to avoid cross-file metadata aliasing.
+    fileName = physicalReader->getPath();
     enableEncodedVector = option.isEnableEncodedColumnVector();
     includedColumnNum = 0;
     endOfFile = false;
@@ -351,6 +353,8 @@ void PixelsRecordReaderImpl::prepareRead()
     // read row group footers
     rowGroupFooters.clear();
     rowGroupFooters.resize(targetRGNum);
+    rowGroupFooterBuffers.clear();
+    rowGroupFooterBuffers.resize(targetRGNum);
     std::vector<bool> rowGroupFooterCacheHit;
     rowGroupFooterCacheHit.resize(targetRGNum);
 
@@ -399,9 +403,11 @@ void PixelsRecordReaderImpl::prepareRead()
             const pixels::fb::RowGroupFooter* parsed =
                 flatbuffers::GetRoot<pixels::fb::RowGroupFooter>((bbs[i]->getPointer()));
             rowGroupFooters.at(fis[i]) = parsed;
+            rowGroupFooterBuffers.at(fis[i]) = bbs[i];
             if (footerCache != nullptr)
             {
-                footerCache->putRGFooter(rgCacheIds[fis[i]], parsed);
+                rowGroupFooters.at(fis[i]) = footerCache->putRGFooterIfAbsent(
+                        rgCacheIds[fis[i]], bbs[i], parsed);
             }
         }
     }
@@ -674,6 +680,7 @@ void PixelsRecordReaderImpl::close()
     }
     readers.clear();
     rowGroupFooters.clear();
+    rowGroupFooterBuffers.clear();
     includedColumnTypes.clear();
     endOfFile = true;
 }

@@ -145,6 +145,9 @@ private:
     std::vector<bool> resultColumnsEncoded;
     bool enableEncodedVector;
     std::vector<const pixels::fb::RowGroupFooter*> rowGroupFooters;
+    // FlatBuffer views borrow memory from these buffers. Cache hits remain
+    // owned by footerCache; misses are retained here for cache-free readers.
+    std::vector<std::shared_ptr<ByteBuffer>> rowGroupFooterBuffers;
 
     int includedColumnNum; // the number of columns to read
     std::vector<const pixels::fb::Type*> includedColumnTypes;

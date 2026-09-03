@@ -26,31 +26,51 @@
 #define PIXELS_PIXELSFOOTERCACHE_H
 
 #include <iostream>
+#include <memory>
+#include <shared_mutex>
 #include <string>
 #include "pixels_generated.h"
 #include <unordered_map>
+#include "physical/natives/ByteBuffer.h"
 
-typedef std::unordered_map<std::string, const pixels::fb::FileTail*> FileTailTable;
-typedef std::unordered_map<std::string, const pixels::fb::RowGroupFooter*> RGFooterTable;
+struct FileTailEntry
+{
+    std::shared_ptr<ByteBuffer> buffer;
+    const pixels::fb::FileTail *fileTail;
+};
+
+struct RGFooterEntry
+{
+    std::shared_ptr<ByteBuffer> buffer;
+    const pixels::fb::RowGroupFooter *footer;
+};
+
+typedef std::unordered_map<std::string, FileTailEntry> FileTailTable;
+typedef std::unordered_map<std::string, RGFooterEntry> RGFooterTable;
 
 class PixelsFooterCache
 {
 public:
     PixelsFooterCache();
 
-    void putFileTail(const std::string &id, const pixels::fb::FileTail* fileTail);
+    const pixels::fb::FileTail *putFileTailIfAbsent(
+            const std::string &id, std::shared_ptr<ByteBuffer> buffer,
+            const pixels::fb::FileTail *fileTail);
 
     bool containsFileTail(const std::string &id);
 
     const pixels::fb::FileTail* getFileTail(const std::string &id);
 
-    void putRGFooter(const std::string &id, const pixels::fb::RowGroupFooter* footer);
+    const pixels::fb::RowGroupFooter *putRGFooterIfAbsent(
+            const std::string &id, std::shared_ptr<ByteBuffer> buffer,
+            const pixels::fb::RowGroupFooter *footer);
 
     bool containsRGFooter(const std::string &id);
 
     const pixels::fb::RowGroupFooter* getRGFooter(const std::string &id);
 
 private:
+    mutable std::shared_mutex mutex_;
     FileTailTable fileTailCacheMap;
     RGFooterTable rowGroupFooterCacheMap;
 

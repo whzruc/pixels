@@ -70,3 +70,10 @@ target_include_directories(ColumnVectorBufferPoolTest PRIVATE
         ${PROJECT_SOURCE_DIR}/pixels-common/include
         ${PROJECT_SOURCE_DIR}/pixels-core/include
 )
+
+add_executable(CPUAffinityTest CPUAffinityTest.cpp)
+target_link_libraries(CPUAffinityTest PRIVATE gtest_main)
+target_include_directories(CPUAffinityTest PRIVATE
+        ${GTEST_DIR}/googletest/include
+        ${PROJECT_SOURCE_DIR}/include
+)

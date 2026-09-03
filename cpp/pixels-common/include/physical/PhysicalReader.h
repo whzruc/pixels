@@ -44,6 +44,9 @@ public:
 //    virtual void readFully(char * buffer, int offset, int length) = 0;
     virtual std::string getName() = 0;
 
+    // Stable, storage-qualified identity used by cross-reader metadata caches.
+    virtual std::string getPath() = 0;
+
     /**
      * If direct I/O is supported, {@link #readFully(int)} will directly read from the file
      * without going through the OS cache. This is currently supported on LocalFS.
