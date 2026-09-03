@@ -4,6 +4,7 @@
 import argparse
 import csv
 import datetime as dt
+import glob
 import itertools
 import os
 import shutil
@@ -15,8 +16,10 @@ from pathlib import Path
 def main():
     repo = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", action="append", required=True,
+    parser.add_argument("--root", action="append", default=[],
                         help="Pixels directory; repeat once per device")
+    parser.add_argument("--root-glob", action="append", default=[],
+                        help="Glob matching one Pixels directory per device")
     parser.add_argument("--threads", nargs="+", type=int, default=[12, 24, 48])
     parser.add_argument("--modes", nargs="+", choices=("non-fixed", "dynamic", "static"),
                         default=["non-fixed", "dynamic", "static"])
@@ -33,6 +36,13 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
+
+    roots = list(args.root)
+    for pattern in args.root_glob:
+        roots.extend(sorted(glob.glob(pattern)))
+    args.root = list(dict.fromkeys(roots))
+    if not args.root:
+        parser.error("provide at least one --root or --root-glob")
 
     if args.repeats <= 0 or any(value <= 0 for value in args.threads):
         parser.error("repeats and threads must be positive")
