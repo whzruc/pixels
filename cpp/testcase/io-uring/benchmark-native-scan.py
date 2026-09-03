@@ -28,7 +28,7 @@ def main():
     parser.add_argument("--files-per-root", type=int, default=0)
     parser.add_argument("--timeout", type=int, default=14400)
     parser.add_argument("--binary", type=Path,
-                        default=repo / "build/release/extension/pixels/tests/BufferPool/"
+                        default=repo / "build/release/extension/pixels/testcase/io-uring/"
                                 "PixelsIoUringScanBenchmark")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--overwrite", action="store_true")
