@@ -3,7 +3,7 @@
 # run_suite_parquet_uring.sh — perf suite wrapper for read_parquet_uring
 #
 # 在 run_suite.sh 基础上，设置 Parquet 专用默认值：
-#   BENCHMARK_PREFIX = clickbench-parquet-uring-e0
+#   BENCHMARK_PREFIX = clickbench-parquet-e0
 #   BUFFER_MODES     = pq-async-doublebuffer pq-async-singlebuffer pq-pread
 #   SSD_MODES        = 1ssd  （默认只跑单盘，加快速度）
 #
@@ -27,7 +27,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ── Parquet-specific defaults ────────────────────────────────────────────────
-export BENCHMARK_PREFIX="${BENCHMARK_PREFIX:-clickbench-parquet-uring-e0}"
+export BENCHMARK_PREFIX="${BENCHMARK_PREFIX:-clickbench-parquet-e0}"
 export SSD_MODES="${SSD_MODES:-1ssd}"
 export BUFFER_MODES="${BUFFER_MODES:-pq-async-doublebuffer pq-async-singlebuffer pq-pread}"
 export QUERY="${QUERY:-q45}"
