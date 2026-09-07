@@ -24,6 +24,8 @@
  */
 #include "vector/LongColumnVector.h"
 #include <algorithm>
+#include <cstdlib>
+#include <new>
 
 LongColumnVector::LongColumnVector(uint64_t len, bool encoding, bool isLong)
         : ColumnVector (len, encoding)
@@ -74,6 +76,31 @@ void *LongColumnVector::current()
     {
         return longVector + readIndex;
     }
+}
+
+void LongColumnVector::setExternalData(long *data)
+{
+    if (ownsData && longVector != nullptr)
+    {
+        free(longVector);
+    }
+    longVector = data;
+    ownsData = false;
+}
+
+void LongColumnVector::ensureOwnedData()
+{
+    if (ownsData && longVector != nullptr)
+    {
+        return;
+    }
+    posix_memalign(reinterpret_cast<void **>(&longVector), 32,
+                   length * sizeof(int64_t));
+    if (longVector == nullptr)
+    {
+        throw std::bad_alloc();
+    }
+    ownsData = true;
 }
 
 void LongColumnVector::add(std::string &value)

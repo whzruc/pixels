@@ -113,14 +113,7 @@ nm -D build/release/duckdb | grep -E ' (malloc|posix_memalign|_Znwm)$'
 
 ## 4. 已尝试优化方案与结果
 
-### 4.1 方案 B：列向量缓冲池（`ColumnVectorBufferPool`）
-
-- **实现**：线程局部 free-list 复用 `BinaryColumnVector` 的 `string_t` 数组；配置 `pixels.columnvector.pool`（默认 true）。
-- **off-CPU**：`setRef → down_read` 从旧跑 ~34% **降至 0**（火焰图中无 `setRef` 帧）。
-- **墙钟**：**无改善**，pool ON 略差于 OFF（doublebuffer t48 约 14s vs 11.5s，有噪声）。
-- **结论**：消除了重叠的缺页等待，但不在墙钟关键路径上；默认可关或仅作调试。
-
-### 4.2 方案 A：glibc mallopt
+### 4.1 方案 A：glibc mallopt
 
 - **实现**：`pixels.malloc.tune=true` 时 `M_MMAP_MAX=0`、`M_TRIM_THRESHOLD=-1`；可选 `pixels.malloc.arena_max`。
 - **arena 限制 A/B**（doublebuffer t48）：
@@ -168,7 +161,6 @@ jemalloc 下 doublebuffer 在 t48 **重新快于** singlebuffer，负向扩展�
 |----|------|------|
 | `pixels.malloc.tune` | true | glibc：`M_MMAP_MAX=0`、`M_TRIM_THRESHOLD=-1`；**jemalloc 下无效** |
 | `pixels.malloc.arena_max` | 0 | glibc：`M_ARENA_MAX`；0=不限制；**勿轻易设为 8** |
-| `pixels.columnvector.pool` | true | 列向量 `string_t` 数组线程局部池；墙钟中性偏负 |
 | `pixels.static.buffer.hugepage` | false | 静态内容缓冲 `MADV_HUGEPAGE` |
 | `pixels.doublebuffer` | 由 suite 按 mode 写入 | double-buffer 开关 |
 | `pixel.enable.globalStaticBytebuffer` | 由 suite 按 mode 写入 | 全局静态缓冲池 |
@@ -320,18 +312,7 @@ export LD_PRELOAD=/lib/x86_64-linux-gnu/libjemalloc.so.2
 "
 ```
 
-### 6.7 列向量池开关 A/B（可选）
-
-```bash
-# 关闭池（追加到运行时 properties，跑完记得恢复）
-echo 'pixels.columnvector.pool=false' >> ~/opt/pixels/etc/pixels-cpp.properties
-
-# 跑 suite 后对比 summary_wall_time.csv
-
-# 删除该行或从备份恢复 properties
-```
-
-### 6.8 权限与常见问题
+### 6.7 权限与常见问题
 
 ```bash
 # perf 权限
@@ -378,7 +359,6 @@ sudo ln -sf /usr/lib/x86_64-linux-gnu/libbcc.so.0.18.0 /usr/lib/x86_64-linux-gnu
 
 | 变更 | 文件 | 状态 |
 |------|------|------|
-| 列向量缓冲池 | `pixels-core/.../ColumnVectorBufferPool.*`、`BinaryColumnVector.*` | 已实现；墙钟收益有限 |
 | glibc mallopt + 可选 arena 上限 | `pixels-duckdb/pixels_extension.cpp` | 已实现；arena 默认 0 |
 | 静态缓冲 MADV_HUGEPAGE | `GlobalStaticBufferPool.cpp` | 可选配置 |
 | 配置项说明 | `pixels-cpp.properties` | 已文档化 |

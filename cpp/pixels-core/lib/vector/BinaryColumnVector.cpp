@@ -28,7 +28,8 @@
 
 BinaryColumnVector::BinaryColumnVector(uint64_t len, bool encoding) : ColumnVector(len, encoding)
 {
-  posix_memalign(reinterpret_cast<void **>(&vector), 32,len * sizeof(pixels::string_t));
+  posix_memalign(reinterpret_cast<void **>(&vector), 32,
+                 len * sizeof(pixels::string_t));
   str_vec.resize(len);
   memoryUsage += (long) sizeof(uint8_t) * len;
 }
@@ -111,13 +112,14 @@ void BinaryColumnVector::ensureSize(uint64_t size, bool preserveData)
   if (length < size)
   {
     pixels::string_t *oldVector = vector;
-    posix_memalign(reinterpret_cast<void **>(&vector), 32, size * sizeof(pixels::string_t));
+    posix_memalign(reinterpret_cast<void **>(&vector), 32,
+                   size * sizeof(pixels::string_t));
     str_vec.resize(size);
     if (preserveData)
     {
       std::copy(oldVector, oldVector + length, vector);
     }
-    delete[] oldVector;
+    free(oldVector);
     memoryUsage += (long) sizeof(pixels::string_t) * (size - length);
     resize(size);
   }

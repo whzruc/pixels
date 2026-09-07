@@ -25,6 +25,8 @@
 
 #include "reader/IntColumnReader.h"
 #include "vector/IntColumnVector.h"
+#include <cstdint>
+#include <cstring>
 
 IntColumnReader::IntColumnReader(std::shared_ptr<TypeDescription> type)
     : ColumnReader(type)
@@ -63,6 +65,14 @@ void IntColumnReader::read(std::shared_ptr<ByteBuffer> input,
   setValid(input, vector, hasNull, vectorIndex, size,
            chunkIndex->littleEndian());
 
+  // Direct views are valid only for the contiguous raw path.  Decoded or
+  // NULL-elided input needs a writable thread-local/vector scratch area.
+  if (encoding->kind() == pixels::fb::EncodingKind_RUNLENGTH || vectorIndex != 0 ||
+      !chunkIndex->littleEndian() || (hasNull && !chunkIndex->nullsPadding()))
+  {
+    columnVector->ensureOwnedData();
+  }
+
   if (encoding->kind() == pixels::fb::EncodingKind_RUNLENGTH)
   {
     for (int i = 0; i < size; i++)
@@ -77,6 +87,18 @@ void IntColumnReader::read(std::shared_ptr<ByteBuffer> input,
   } else
   {
     const bool littleEndian = chunkIndex->littleEndian();
+    // Pixels stores the common INT path as contiguous little-endian values.
+    // Keep the NULL/byte-order aware loop for exceptional layouts, but avoid
+    // four ByteBuffer::get() calls per value on the normal fast path.
+    if (vectorIndex == 0 && littleEndian && (!hasNull || chunkIndex->nullsPadding()) &&
+        (reinterpret_cast<uintptr_t>(input->getPointer() + input->getReadPos()) % alignof(int32_t) == 0))
+    {
+      columnVector->setExternalData(reinterpret_cast<int32_t *>(
+          input->getPointer() + input->getReadPos()));
+      input->setReadPos(input->getReadPos() + size * sizeof(int32_t));
+      elementIndex += size;
+      return;
+    }
     for (int i = 0; i < size; ++i)
     {
       int outputIndex = vectorIndex + i;

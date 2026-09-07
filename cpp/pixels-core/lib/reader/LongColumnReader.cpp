@@ -24,6 +24,8 @@
 
 #include "reader/LongColumnReader.h"
 #include "vector/LongColumnVector.h"
+#include <cstdint>
+#include <cstring>
 
 LongColumnReader::LongColumnReader(std::shared_ptr<TypeDescription> type)
     : ColumnReader(type)
@@ -62,6 +64,14 @@ void LongColumnReader::read(std::shared_ptr<ByteBuffer> input,
   setValid(input, vector, hasNull, vectorIndex, size,
            chunkIndex->littleEndian());
 
+  // Direct views are valid only for the contiguous raw path.  Decoded or
+  // NULL-elided input needs a writable thread-local/vector scratch area.
+  if (encoding->kind() == pixels::fb::EncodingKind_RUNLENGTH || vectorIndex != 0 ||
+      !chunkIndex->littleEndian() || (hasNull && !chunkIndex->nullsPadding()))
+  {
+    columnVector->ensureOwnedData();
+  }
+
   if (encoding->kind() == pixels::fb::EncodingKind_RUNLENGTH)
   {
     for (int i = 0; i < size; i++)
@@ -76,6 +86,17 @@ void LongColumnReader::read(std::shared_ptr<ByteBuffer> input,
   } else
   {
     const bool littleEndian = chunkIndex->littleEndian();
+    // Fast path for contiguous little-endian LONG values.  Retain the loop
+    // below for NULL-elided or big-endian layouts.
+    if (vectorIndex == 0 && littleEndian && (!hasNull || chunkIndex->nullsPadding()) &&
+        (reinterpret_cast<uintptr_t>(input->getPointer() + input->getReadPos()) % alignof(int64_t) == 0))
+    {
+      columnVector->setExternalData(reinterpret_cast<int64_t *>(
+          input->getPointer() + input->getReadPos()));
+      input->setReadPos(input->getReadPos() + size * sizeof(int64_t));
+      elementIndex += size;
+      return;
+    }
     for (int i = 0; i < size; ++i)
     {
       int outputIndex = vectorIndex + i;
