@@ -76,3 +76,27 @@ target_link_libraries(pixels-common
 		${LIBURING_LIB}
 		pthread
 )
+
+# Optional SPDK user-space NVMe backend.  Disabled by default so ordinary
+# io_uring builds do not require SPDK/DPDK development packages.
+option(PIXELS_ENABLE_SPDK "Build with SPDK user-space NVMe driver support" OFF)
+
+if(PIXELS_ENABLE_SPDK)
+	find_package(PkgConfig REQUIRED)
+	pkg_check_modules(SPDK_NVME REQUIRED spdk_nvme)
+	pkg_check_modules(SPDK_ENV REQUIRED spdk_env_dpdk)
+	add_definitions(-DPIXELS_ENABLE_SPDK)
+	target_sources(pixels-common PRIVATE
+		lib/physical/natives/DirectSpdkRandomAccessFile.cpp
+		lib/physical/SpdkBufferPool.cpp)
+	target_include_directories(pixels-common PRIVATE
+		${SPDK_NVME_INCLUDE_DIRS}
+		${SPDK_ENV_INCLUDE_DIRS})
+	target_link_libraries(pixels-common PRIVATE
+		${SPDK_NVME_LINK_LIBRARIES}
+		${SPDK_ENV_LINK_LIBRARIES}
+		uuid)
+	set_target_properties(pixels-common PROPERTIES
+		INSTALL_RPATH "/usr/local/lib"
+		BUILD_RPATH "/usr/local/lib")
+endif()
