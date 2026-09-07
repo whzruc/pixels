@@ -28,9 +28,13 @@
 #include "physical/natives/DirectUringRandomAccessFileDynamic.h"
 #include "physical/natives/DirectUringRandomAccessFileNonFixed.h"
 #include "physical/natives/DirectUringRandomAccessFileStatic.h"
+#ifdef PIXELS_ENABLE_SPDK
+#include "physical/natives/DirectSpdkRandomAccessFile.h"
+#endif
 #include "physical/GlobalStaticBufferPool.h"
 #include "physical/BufferPoolMode.h"
 #include "physical/FilePath.h"
+#include "utils/ConfigFactory.h"
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -68,6 +72,22 @@ std::string LocalFS::ensureSchemePrefix(const std::string &path) const
 
 std::shared_ptr <PixelsRandomAccessFile> LocalFS::openRaf(const std::string &path)
 {
+#ifdef PIXELS_ENABLE_SPDK
+    // SPDK is opt-in and takes precedence over the io_uring backends.
+    // It requires VFIO-bound NVMe devices and a generated LBA map.
+    try
+    {
+        if (ConfigFactory::Instance().boolCheckProperty("localfs.enable.spdk"))
+        {
+            return std::make_shared<DirectSpdkRandomAccessFile>(path);
+        }
+    }
+    catch (...)
+    {
+        // Keep the normal local-file backends available when the optional
+        // SPDK property is absent or malformed.
+    }
+#endif
     if (GetBufferPoolMode() == BufferPoolMode::Dynamic)
     {
         return std::make_shared<DirectUringRandomAccessFileDynamic>(path);
