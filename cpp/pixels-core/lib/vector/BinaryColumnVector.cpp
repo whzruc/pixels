@@ -30,7 +30,8 @@ BinaryColumnVector::BinaryColumnVector(uint64_t len, bool encoding) : ColumnVect
 {
   posix_memalign(reinterpret_cast<void **>(&vector), 32,
                  len * sizeof(pixels::string_t));
-  str_vec.resize(len);
+  // Reader setRef() only stores non-owning descriptors. Allocate the
+  // writer-only string container lazily in setVal().
   memoryUsage += (long) sizeof(uint8_t) * len;
 }
 
@@ -102,6 +103,10 @@ void BinaryColumnVector::setVal(int elementNum, uint8_t *sourceBuf, int start, i
 {
   vector[elementNum] = pixels::string_t(reinterpret_cast<char *>(sourceBuf + start), length);
   isNull[elementNum] = false;
+  if (str_vec.size() <= static_cast<size_t>(elementNum))
+  {
+    str_vec.resize(this->length);
+  }
   str_vec[elementNum] = std::string(reinterpret_cast<char *>(sourceBuf + start), length);
   //std::cout<<"add str "<<str_vec[elementNum]<<std::endl;
 }
