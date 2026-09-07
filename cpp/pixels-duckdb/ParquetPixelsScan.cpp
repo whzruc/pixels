@@ -814,28 +814,10 @@ void ParquetPixelsScanFunction::Scan(ClientContext& context,
                         gstate.active_threads.fetch_sub(1, std::memory_order_acq_rel);
                     if (remaining == 1 &&
                         !gstate.profile_printed.exchange(true, std::memory_order_acq_rel)) {
-                        ::TimeProfiler::Instance().PrintSummary(
-                            "Parquet.Scan.Total",
-                            {
-                                "Parquet.Scan.Total",
-                                "Parquet.Decode.ReadNext",
-                                "Parquet.Decode.ExportBatch",
-                                "Parquet.Convert.ArrowToDuckDB",
-                                "Parquet.StateTransition.Total"
-                            },
-                            "Parquet Pipeline Profile Summary");
-                        ::TimeProfiler::Instance().PrintSummary(
-                            "Parquet.StateTransition.Total",
-                            {
-                                "Parquet.StateTransition.Total",
-                                "Parquet.IO.Submit",
-                                "Parquet.IO.Wait",
-                                "Parquet.IO.Pread",
-                                "Parquet.Decode.BuildReader",
-                                "Parquet.InitLocal.AllocateBuffers",
-                                "Parquet.InitLocal.SetupIoUring"
-                            },
-                            "Parquet I/O and Initialization Profile Summary");
+                        // The current profiler exposes a global Print() API;
+                        // keep the archived instrumentation while remaining
+                        // compatible with that API.
+                        ::TimeProfiler::Instance().Print();
                     }
                     return;
                 }
