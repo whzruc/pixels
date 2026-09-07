@@ -19,6 +19,8 @@ add_subdirectory(third-party/flatbuffers EXCLUDE_FROM_ALL)
 set(EXTENSION_SOURCES
         pixels-duckdb/pixels_extension.cpp
         pixels-duckdb/PixelsScanFunction.cpp
+        pixels-duckdb/ArrowRandomAccessFile.cpp
+        pixels-duckdb/ParquetPixelsScan.cpp
 )
 
 add_subdirectory(pixels-common)
@@ -41,6 +43,19 @@ target_link_libraries(${EXTENSION_NAME}
         pixels-common
         pixels-core
 )
+
+# The archived Parquet io_uring reader uses the system Arrow/Parquet ABI.
+# Keep this explicit so the normal Pixels reader and the Parquet reader share
+# the same DuckDB extension target without vendoring a second Arrow build.
+find_package(Arrow 20 REQUIRED CONFIG
+        PATHS /usr/local/lib/cmake/Arrow
+        NO_DEFAULT_PATH)
+find_package(Parquet 20 REQUIRED CONFIG
+        PATHS /usr/local/lib/cmake/Parquet
+        NO_DEFAULT_PATH)
+target_link_libraries(${EXTENSION_NAME}
+        Arrow::arrow_shared
+        Parquet::parquet_shared)
 
 # Add the subdirectory that contains the build_loadable_extension definition
 message("duckdb export set: ${DUCKDB_EXPORT_SET}" )
