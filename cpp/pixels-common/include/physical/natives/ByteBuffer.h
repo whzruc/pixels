@@ -37,9 +37,14 @@
 class ByteBuffer
 {
 public:
+    enum class AllocType { BY_NEW, BY_MALLOC, BY_SPDK_DMA };
+
     ByteBuffer(uint32_t size = BB_DEFAULT_SIZE);
 
     ByteBuffer(uint8_t *arr, uint32_t size, bool allocated_by_new = true);
+
+    // Constructor for SPDK DMA memory allocated by spdk_dma_malloc.
+    ByteBuffer(uint8_t *arr, uint32_t size, AllocType allocType);
 
     ByteBuffer(ByteBuffer &bb, uint32_t startId, uint32_t length);
 
@@ -178,6 +183,7 @@ protected:
     // Sometimes the buffer is allocated by malloc/poxis_memalign, in this case, we
     // should use free() to deallocate the buf
     bool allocated_by_new;
+    AllocType allocType{AllocType::BY_NEW};
 private:
     template<typename T>
     T read()
