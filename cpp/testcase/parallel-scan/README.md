@@ -13,7 +13,6 @@ Build the release tree and run the focused tests:
 make release -j12
 build/release/extension/pixels/tests/BufferPool/CPUAffinityTest
 build/release/extension/pixels/tests/metadata/PixelsFooterCacheTest
-build/release/extension/pixels/tests/BufferPool/ColumnVectorBufferPoolTest
 build/release/extension/pixels/tests/BufferPool/DynamicBufferPoolTest
 build/release/extension/pixels/tests/BufferPool/GlobalStaticBufferPoolTest
 build/release/extension/pixels/tests/BufferPool/DirectUringNonFixedTest

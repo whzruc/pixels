@@ -195,6 +195,5 @@ def main():
                       f"speedup={first_median / second_median:.3f} "
                       f"p={p_value:.4f} clear={clear}")
 
-
 if __name__ == "__main__":
     main()

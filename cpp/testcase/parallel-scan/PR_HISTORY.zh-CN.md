@@ -12,7 +12,6 @@
 | Static BufferPool 不可用处理（`94d5b5e8`） | `GlobalStaticBufferPoolTest` | 同上 | 覆盖 io_uring 不可用时的回退/处理路径 |
 | HugePage 与 ClickBench 验证（`b6256452`） | `cpp/testcase/buffer-pool/validate-clickbench.sh` | `cpp/testcase/buffer-pool/README.md` | 原始 buffer-pool 结果在本地 `testcase/buffer-pool/results/` |
 | io_uring 多后端（`cccc4fce`） | `cpp/testcase/io-uring/PixelsIoUringScanBenchmark.cpp`、相关 Python runner | `cpp/testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md` | 纯 I/O、Q24、shared/device-affine 报告均从该实验体系产生 |
-| ColumnVector backing storage 复用（`cc5e62c0`） | `ColumnVectorBufferPoolTest`、`testcase/column-vector/q-string-scan.sql` | `cpp/testcase/column-vector/PERFORMANCE_REPORT.zh-CN.md` | 报告记录 12/24/48 线程 A/B 性能结果 |
 | Footer Cache / metadata lifetime（`d9fd46f4`、`2a225ca6`） | `cpp/tests/metadata/PixelsFooterCacheTest.cpp`、footer-cache benchmark | `cpp/testcase/footer-cache/PERFORMANCE_REPORT.zh-CN.md` | 报告记录生命周期、缓存身份和端到端影响 |
 | DuckDB 并行扫描（PR7） | `cpp/testcase/parallel-scan/README.md`、本 PR7 报告 | `cpp/testcase/parallel-scan/PR7_REPORT.md`、`PR7_REPORT.zh-CN.md` | q01–q43 全量正确性和 Q24 高并发验证见报告 |
 

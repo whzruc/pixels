@@ -25,7 +25,6 @@ at the same host checkout:
 
 - `CPUAffinityTest`: 3/3 passed
 - `PixelsFooterCacheTest`: 4/4 passed
-- `ColumnVectorBufferPoolTest`: 2/2 passed
 - `DynamicBufferPoolTest`: 3/3 passed
 - `GlobalStaticBufferPoolTest`: 1/1 passed
 - `DirectUringNonFixedTest`: 1/1 passed

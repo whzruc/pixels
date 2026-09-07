@@ -53,7 +53,6 @@ target_include_directories(DirectUringNonFixedTest PRIVATE
         ${CMAKE_CURRENT_BINARY_DIR}/../../pixels-common/liburing/src/include
 )
 add_executable(CPUAffinityTest CPUAffinityTest.cpp)
-add_executable(CPUAffinityTest CPUAffinityTest.cpp)
 target_link_libraries(CPUAffinityTest PRIVATE gtest_main)
 target_include_directories(CPUAffinityTest PRIVATE
         ${GTEST_DIR}/googletest/include
