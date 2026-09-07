@@ -27,6 +27,7 @@
 #include "pixels_extension.hpp"
 #include "PixelsReadBindData.hpp"
 #include "PixelsScanFunction.hpp"
+#include "ParquetPixelsScan.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/optional_ptr.hpp"
@@ -75,6 +76,9 @@ void PixelsExtension::Load(ExtensionLoader &loader) {
   cinfo.name = "pixels_scan";
 
   catalog.CreateTableFunction(context, &cinfo);
+  auto parquet_scan_fun = ParquetPixelsScanFunction::GetFunctionSet();
+  CreateTableFunctionInfo parquet_info(parquet_scan_fun);
+  catalog.CreateTableFunction(context, &parquet_info);
   con.Commit();
 
   auto &config = DBConfig::GetConfig(db_instance);
