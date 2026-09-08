@@ -84,6 +84,16 @@ std::string ConfigFactory::getProperty(std::string key)
     return prop[key];
 }
 
+std::string ConfigFactory::getProperty(const std::string &key, const std::string &defaultValue)
+{
+    auto property = prop.find(key);
+    if (property == prop.end())
+    {
+        return defaultValue;
+    }
+    return property->second;
+}
+
 bool ConfigFactory::boolCheckProperty(std::string key)
 {
     if (getProperty(key) == "true")

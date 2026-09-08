@@ -28,4 +28,5 @@
 #include_directories(../pixels-common/include)
 #gtest_discover_tests(unit_tests)
 
+add_subdirectory(BufferPool)
 add_subdirectory(writer)
