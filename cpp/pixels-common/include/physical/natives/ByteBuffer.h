@@ -43,16 +43,12 @@ public:
 
     ByteBuffer(uint8_t *arr, uint32_t size, bool allocated_by_new = true);
 
-    // Constructor for SPDK DMA memory allocated by spdk_dma_malloc.
+    // Constructor for SPDK DMA memory: buf must have been allocated with spdk_dma_malloc.
     ByteBuffer(uint8_t *arr, uint32_t size, AllocType allocType);
 
     ByteBuffer(ByteBuffer &bb, uint32_t startId, uint32_t length);
 
-    ByteBuffer(ByteBuffer &bb,uint32_t startId,uint32_t length,bool fromSlice);
-
     ~ByteBuffer();
-
-    std::shared_ptr<ByteBuffer> slice(uint32_t offset, uint32_t length);
 
     void filp();// reset the readPosition
     uint32_t bytesRemaining(); // Number of uint8_ts from the current read position till the end of the buffer
@@ -168,7 +164,8 @@ public:
 
     void printPosition();
 
-    // Grow the backing storage before a write exceeds its capacity.
+    // for auto-resize
+
     void ensureCapacity(uint32_t minCapacity);
 
 protected:
@@ -179,7 +176,6 @@ protected:
     std::string name;
     uint32_t rmark;
     bool fromOtherBB;
-    bool fromSlice;
     // Sometimes the buffer is allocated by malloc/poxis_memalign, in this case, we
     // should use free() to deallocate the buf
     bool allocated_by_new;
@@ -211,6 +207,10 @@ private:
     {
         uint32_t s = sizeof(data);
 
+        // if (size() < (wpos + s))
+        // {
+        //     throw std::runtime_error("Append exceeds the size of buffer");
+        // }
         ensureCapacity(wpos + s);
         memcpy(&buf[wpos], (uint8_t * ) & data, s);
         //printf("writing %c to %i\n", (uint8_t)data, wpos);
@@ -221,7 +221,13 @@ private:
     template<typename T>
     void insert(T data, uint32_t index)
     {
+        // if ((index + sizeof(data)) > size())
+        // {
+        //     throw std::runtime_error("Insert exceeds the size of buffer");
+        // }
         uint32_t s = sizeof(data);
+
+        // 确保 index 处的写入不会越界
         ensureCapacity(index + s);
         memcpy(&buf[index], (uint8_t * ) & data, sizeof(data));
 

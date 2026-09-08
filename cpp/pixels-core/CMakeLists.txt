@@ -11,9 +11,10 @@ target_link_libraries(
         pixels-core
         pixels-common
 )
-SET(CMAKE_CXX_FLAGS "-mavx2")
+string(APPEND CMAKE_CXX_FLAGS " -mavx2")
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/../pixels-common/liburing/src/include)
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/../pixels-common/flatbuffers_out)
 include_directories(../pixels-common/include)
 include_directories(include)
 include_directories(include/writer)

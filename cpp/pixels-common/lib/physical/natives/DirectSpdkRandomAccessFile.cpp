@@ -149,7 +149,13 @@ void SpdkGlobal::Initialize(const std::string& lba_map_path)
     std::call_once(init_flag, [&lba_map_path]() {
         PROFILE_START("Spdk.Initialize.Total");
         // ── 1. Init SPDK/DPDK environment ─────────────────────────────────
-        struct spdk_env_opts opts;
+        // Newer SPDK releases preserve opts_size across spdk_env_opts_init()
+        // so that the library can safely handle callers built against an
+        // older/newer version of this structure.  Leaving it uninitialized
+        // makes startup nondeterministic (and is commonly observed as
+        // "Invalid opts->opts_size 0 too small").
+        struct spdk_env_opts opts{};
+        opts.opts_size = sizeof(opts);
         spdk_env_opts_init(&opts);
         opts.name     = "pixels_spdk";
         opts.shm_id   = -1;  // private hugepage pool (no shared memory)

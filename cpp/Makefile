@@ -1,4 +1,4 @@
-.PHONY: all clean debug release relWithDebInfo pull update
+.PHONY: all clean debug release pull update fb-release fb-debug spdk spdk-debug spdk-clean
 
 all: release
 
@@ -14,20 +14,22 @@ ifeq (${STATIC_LIBCPP}, 1)
 endif
 
 ifeq ($(GEN),ninja)
-	GENERATOR=-G "Ninja"
-	FORCE_COLOR=-DFORCE_COLORED_OUTPUT=1
+    GENERATOR=-G "Ninja"
+    FORCE_COLOR=-DFORCE_COLORED_OUTPUT=1
 endif
 
-BUILD_FLAGS=-DCMAKE_CXX_STANDARD=20 -DEXTENSION_STATIC_BUILD=1 -DBUILD_TPCH_EXTENSION=1 -DBUILD_BENCHMARKS=1 -DBUILD_PARQUET_EXTENSION=1 \
-${OSX_BUILD_UNIVERSAL_FLAG} ${STATIC_LIBCPP}
+# remove protobuf, use flatbuffer instead
+BUILD_FLAGS=-DEXTENSION_STATIC_BUILD=1 -DBUILD_TPCH_EXTENSION=1 -DBUILD_BENCHMARKS=1 -DBUILD_PARQUET_EXTENSION=1 \
 
 CLIENT_FLAGS :=
+PIXELS_BASE_DIR := $(shell dirname $(shell pwd))
 
-# These flags will make DuckDB build the extension
-
-EXTENSION_FLAGS=-DDUCKDB_EXTENSION_NAMES="pixels" -DDUCKDB_EXTENSION_PIXELS_PATH="$(PROJ_DIR)" \
--DDUCKDB_EXTENSION_PIXELS_SHOULD_LINK="TRUE" -DDUCKDB_EXTENSION_PIXELS_INCLUDE_PATH="$(PROJ_DIR)include" \
--DUSE_FLATBUFFERS=ON -DPIXELS_SRC="$(shell dirname $(CURDIR))"
+FB_FLAGS=-DUSE_FLATBUFFERS=ON \
+-DDUCKDB_EXTENSION_NAMES="pixels" \
+-DDUCKDB_EXTENSION_PIXELS_PATH="$(PROJ_DIR)" \
+-DDUCKDB_EXTENSION_PIXELS_SHOULD_LINK="TRUE" \
+-DDUCKDB_EXTENSION_PIXELS_INCLUDE_PATH="$(PROJ_DIR)include" \
+-DPIXELS_SRC="$(PIXELS_BASE_DIR)"
 
 pull:
 	git submodule init
@@ -38,19 +40,42 @@ update:
 	git -C third-party/googletest checkout v1.15.2
 
 clean:
-	rm -rf build/release
-	rm -rf build/debug
+	rm -rf build/fb-release
+	rm -rf build/fb-debug
 	cd pixels-duckdb/duckdb && make clean
 
-# Main build
-debug:
-	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Debug ${BUILD_FLAGS} -S pixels-duckdb/duckdb -B build/debug && \
-	cmake --build build/debug --config Debug
+debug: fb-debug
+release: fb-release
 
-release:
-	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Release ${BUILD_FLAGS} -S pixels-duckdb/duckdb -B build/release && \
+fb-release:
+	cmake $(GENERATOR) $(FORCE_COLOR) $(FB_FLAGS) ${CLIENT_FLAGS} \
+	-DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Release ${BUILD_FLAGS} \
+	-S pixels-duckdb/duckdb -B build/release && \
 	cmake --build build/release --config Release
 
-relWithDebInfo:
-	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=RelWithDebInfo ${BUILD_FLAGS} -S pixels-duckdb/duckdb -B build/relWithDebInfo && \
-	cmake --build build/relWithDebInfo --config RelWithDebInfo
+fb-debug:
+	cmake $(GENERATOR) $(FORCE_COLOR) $(FB_FLAGS) ${CLIENT_FLAGS} \
+	-DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Debug ${BUILD_FLAGS} \
+	-S pixels-duckdb/duckdb -B build/debug && \
+	cmake --build build/debug --config Debug
+
+# ── SPDK builds (user-space NVMe, requires hugepages + VFIO-bound devices) ──
+
+spdk: spdk-release
+
+spdk-release:
+	cmake $(GENERATOR) $(FORCE_COLOR) $(FB_FLAGS) ${CLIENT_FLAGS} \
+	-DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Release ${BUILD_FLAGS} \
+	-DPIXELS_ENABLE_SPDK=ON \
+	-S pixels-duckdb/duckdb -B build/spdk-release && \
+	cmake --build build/spdk-release --config Release
+
+spdk-debug:
+	cmake $(GENERATOR) $(FORCE_COLOR) $(FB_FLAGS) ${CLIENT_FLAGS} \
+	-DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Debug ${BUILD_FLAGS} \
+	-DPIXELS_ENABLE_SPDK=ON \
+	-S pixels-duckdb/duckdb -B build/spdk-debug && \
+	cmake --build build/spdk-debug --config Debug
+
+spdk-clean:
+	rm -rf build/spdk-release build/spdk-debug

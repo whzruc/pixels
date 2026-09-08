@@ -72,7 +72,10 @@ private:
     static thread_local int  colCount;
     // Two buffer sets for double buffering (index 0 and 1)
     static thread_local std::map<uint32_t, std::shared_ptr<ByteBuffer>> buffers[2];
-    static thread_local std::map<uint32_t, uint64_t> nrBytes;
+    // Capacity is tracked independently for the two buffer sets.  Growing the
+    // set selected for the next I/O must never release the other set: its
+    // ByteBuffer views can still be consumed by the current reader.
+    static thread_local std::map<uint32_t, uint64_t> nrBytes[2];
 };
 
 #endif // PIXELS_ENABLE_SPDK

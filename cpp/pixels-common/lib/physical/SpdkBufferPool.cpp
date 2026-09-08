@@ -34,7 +34,7 @@ thread_local int  SpdkBufferPool::currBufferIdx = 1;
 thread_local int  SpdkBufferPool::nextBufferIdx = 0;
 thread_local int  SpdkBufferPool::colCount      = 0;
 thread_local std::map<uint32_t, std::shared_ptr<ByteBuffer>> SpdkBufferPool::buffers[2];
-thread_local std::map<uint32_t, uint64_t> SpdkBufferPool::nrBytes;
+thread_local std::map<uint32_t, uint64_t> SpdkBufferPool::nrBytes[2];
 
 // ── Internal helper: resolve allocation size for one column ────────────────
 //
@@ -48,8 +48,11 @@ static uint64_t resolveAllocSize(const std::string& columnName,
     uint64_t allocSize;
     if (csv) {
         try {
-            // CSV holds the dataset-wide max chunk size; still add alignment slack.
-            allocSize = static_cast<uint64_t>(csv->get(columnName)) + SPDK_POOL_EXTRA_SIZE;
+            // Treat the CSV as a sizing hint, not an unchecked guarantee: a
+            // stale CSV must not make the DMA target smaller than this chunk.
+            const uint64_t csvBytes = static_cast<uint64_t>(csv->get(columnName));
+            allocSize = (csvBytes > chunkBytes ? csvBytes : chunkBytes) +
+                        SPDK_POOL_EXTRA_SIZE;
         } catch (...) {
             allocSize = chunkBytes + SPDK_POOL_EXTRA_SIZE;
         }
@@ -103,37 +106,38 @@ void SpdkBufferPool::Initialize(std::vector<uint32_t>    colIds,
                     static_cast<uint32_t>(allocSize),
                     ByteBuffer::AllocType::BY_SPDK_DMA);
             }
-            nrBytes[colId] = allocSize;
+            nrBytes[0][colId] = allocSize;
+            nrBytes[1][colId] = allocSize;
         }
 
         colCount      = (int)colIds.size();
         isInitialized = true;
         PROFILE_END("Spdk.BufferPool.Initialize.Allocate");
     } else {
-        // Already initialized — verify sizes; grow if the CSV wasn't used
-        // the first time (e.g., a new, larger chunk for a variable-length column).
+        // Already initialized — verify the buffer set selected for this I/O.
+        // The other set belongs to the file currently being decoded.  Its
+        // chunk ByteBuffers are non-owning views, so releasing that set here
+        // would leave the current reader with dangling pointers.
         for (int i = 0; i < (int)colIds.size(); i++) {
             uint32_t colId     = colIds.at(i);
             uint64_t allocSize = resolveAllocSize(columnNames.at(colId), bytes.at(i), csv.get());
 
-            if (nrBytes.find(colId) == nrBytes.end() ||
-                nrBytes[colId] < allocSize)
+            if (nrBytes[currBufferIdx].find(colId) == nrBytes[currBufferIdx].end() ||
+                nrBytes[currBufferIdx][colId] < allocSize)
             {
                 PROFILE_START("Spdk.BufferPool.Initialize.Grow");
-                for (int idx = 0; idx < 2; idx++) {
-                    buffers[idx].erase(colId);
-                    void* ptr = spdk_dma_malloc(allocSize, 4096, nullptr);
-                    if (!ptr)
-                        throw std::runtime_error(
-                            "SpdkBufferPool::Initialize: spdk_dma_malloc failed "
-                            "(grow) for colId=" + std::to_string(colId) +
-                            " size=" + std::to_string(allocSize));
-                    buffers[idx][colId] = std::make_shared<ByteBuffer>(
-                        static_cast<uint8_t*>(ptr),
-                        static_cast<uint32_t>(allocSize),
-                        ByteBuffer::AllocType::BY_SPDK_DMA);
-                }
-                nrBytes[colId] = allocSize;
+                buffers[currBufferIdx].erase(colId);
+                void* ptr = spdk_dma_malloc(allocSize, 4096, nullptr);
+                if (!ptr)
+                    throw std::runtime_error(
+                        "SpdkBufferPool::Initialize: spdk_dma_malloc failed "
+                        "(grow) for colId=" + std::to_string(colId) +
+                        " size=" + std::to_string(allocSize));
+                buffers[currBufferIdx][colId] = std::make_shared<ByteBuffer>(
+                    static_cast<uint8_t*>(ptr),
+                    static_cast<uint32_t>(allocSize),
+                    ByteBuffer::AllocType::BY_SPDK_DMA);
+                nrBytes[currBufferIdx][colId] = allocSize;
                 PROFILE_END("Spdk.BufferPool.Initialize.Grow");
             }
         }
@@ -163,7 +167,8 @@ void SpdkBufferPool::Reset()
     // spdk_dma_free via the BY_SPDK_DMA AllocType path.
     for (int idx = 0; idx < 2; idx++)
         buffers[idx].clear();
-    nrBytes.clear();
+    nrBytes[0].clear();
+    nrBytes[1].clear();
     colCount      = 0;
     currBufferIdx = 1;
     nextBufferIdx = 0;

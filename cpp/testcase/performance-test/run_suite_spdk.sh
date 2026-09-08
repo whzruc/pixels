@@ -77,7 +77,10 @@ if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
 fi
 PROPERTIES_PATH="${PROPERTIES_PATH:-$INVOKING_HOME/opt/pixels/etc/pixels-cpp.properties}"
 PIXELS_SRC="${PIXELS_SRC:-$(cd "$SUITE_REPO_ROOT/.." && pwd)}"
-PIXELS_HOME="${PIXELS_HOME:-$(cd "$(dirname "$PROPERTIES_PATH")/.." && pwd)}"
+# ConfigFactory historically derives the properties path from PIXELS_HOME.
+# Do not inherit a stale PIXELS_HOME that points at a different temporary
+# configuration than PROPERTIES_PATH.
+PIXELS_HOME="$(cd "$(dirname "$PROPERTIES_PATH")/.." && pwd)"
 export PIXELS_SRC PIXELS_HOME PROPERTIES_PATH
 
 RESULT_ROOT="${RESULT_ROOT:-$SUITE_ROOT/results_spdk}"

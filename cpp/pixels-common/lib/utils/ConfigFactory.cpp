@@ -53,8 +53,18 @@ ConfigFactory::ConfigFactory()
     {
         pixelsHome += "/";
     }
-    std::ifstream infile(pixelsHome + "cpp/etc/pixels-cpp.properties");
-    std::cout << "pixels properties file is " << pixelsHome + "cpp/etc/pixels-cpp.properties" << std::endl;
+    std::string propertiesPath = pixelsHome + "etc/pixels-cpp.properties";
+    const char *configuredPropertiesPath = std::getenv("PROPERTIES_PATH");
+    if (configuredPropertiesPath != nullptr && configuredPropertiesPath[0] != '\0')
+    {
+        propertiesPath = configuredPropertiesPath;
+    }
+    std::ifstream infile(propertiesPath);
+    if (!infile.is_open())
+    {
+        throw InvalidArgumentException("Failed to open pixels properties file: " + propertiesPath);
+    }
+    std::cout << "pixels properties file is " << propertiesPath << std::endl;
     std::string line;
     while (std::getline(infile, line))
     {
@@ -84,16 +94,6 @@ std::string ConfigFactory::getProperty(std::string key)
     return prop[key];
 }
 
-std::string ConfigFactory::getProperty(const std::string &key, const std::string &defaultValue)
-{
-    auto property = prop.find(key);
-    if (property == prop.end())
-    {
-        return defaultValue;
-    }
-    return property->second;
-}
-
 bool ConfigFactory::boolCheckProperty(std::string key)
 {
     if (getProperty(key) == "true")
@@ -112,16 +112,16 @@ bool ConfigFactory::boolCheckProperty(std::string key)
 
 bool ConfigFactory::getBoolProperty(const std::string &key, bool defaultValue)
 {
-    auto property = prop.find(key);
-    if (property == prop.end())
+    auto it = prop.find(key);
+    if (it == prop.end())
     {
         return defaultValue;
     }
-    if (property->second == "true")
+    if (it->second == "true")
     {
         return true;
     }
-    if (property->second == "false")
+    if (it->second == "false")
     {
         return false;
     }

@@ -24,25 +24,19 @@
  */
 #include "physical/storage/LocalFS.h"
 #include "physical/natives/DirectRandomAccessFile.h"
-#include "physical/natives/DirectUringRandomAccessFile.h"
-#include "physical/natives/DirectUringRandomAccessFileDynamic.h"
-#include "physical/natives/DirectUringRandomAccessFileNonFixed.h"
-#include "physical/natives/DirectUringRandomAccessFileStatic.h"
+#include "physical/natives/DirectUringRandomAccessFile.h"  // Static buffer pool version with fixed buffers
+#include "physical/natives/DirectUringRandomAccessFileNonFixed.h"  // Static buffer pool version without fixed buffers
+#include "physical/natives/DirectUringRandomAccessFileDynamic.h"  // Dynamic buffer pool version
+#include "physical/natives/DirectUringRandomAccessFileStatic.h"  // Global static buffer pool version
 #ifdef PIXELS_ENABLE_SPDK
 #include "physical/natives/DirectSpdkRandomAccessFile.h"
 #endif
-#include "physical/GlobalStaticBufferPool.h"
-#include "physical/BufferPoolMode.h"
+#include "physical/ThreadContext.h"
 #include "physical/FilePath.h"
 #include "utils/ConfigFactory.h"
 #include <filesystem>
 
 namespace fs = std::filesystem;
-
-namespace
-{
-thread_local int staticBufferThreadId = -1;
-}
 
 std::string LocalFS::SchemePrefix = "file://";
 
@@ -73,47 +67,68 @@ std::string LocalFS::ensureSchemePrefix(const std::string &path) const
 std::shared_ptr <PixelsRandomAccessFile> LocalFS::openRaf(const std::string &path)
 {
 #ifdef PIXELS_ENABLE_SPDK
-    // SPDK is opt-in and takes precedence over the io_uring backends.
-    // It requires VFIO-bound NVMe devices and a generated LBA map.
-    try
+    // SPDK user-space NVMe driver path (highest priority).
+    // Enabled by: localfs.enable.spdk=true  in pixels-cpp.properties.
+    // Requires bind_vfio.sh + gen_lba_map.py to have been run beforehand.
     {
-        if (ConfigFactory::Instance().boolCheckProperty("localfs.enable.spdk"))
-        {
+        bool useSpdk = false;
+        try {
+            useSpdk = ConfigFactory::Instance().boolCheckProperty("localfs.enable.spdk");
+        } catch (...) {}
+        if (useSpdk) {
             return std::make_shared<DirectSpdkRandomAccessFile>(path);
         }
     }
-    catch (...)
-    {
-        // Keep the normal local-file backends available when the optional
-        // SPDK property is absent or malformed.
+#endif // PIXELS_ENABLE_SPDK
+
+    // Check if global static buffer pool is enabled
+    bool useStaticBufferPool = false;
+    try {
+        useStaticBufferPool = ConfigFactory::Instance().boolCheckProperty("pixel.enable.globalStaticBytebuffer");
+    } catch (...) {
+        useStaticBufferPool = false;
     }
-#endif
-    if (GetBufferPoolMode() == BufferPoolMode::Dynamic)
+    
+    if (useStaticBufferPool && pixels::ThreadContext::HasContext())
     {
+        // Use global static buffer pool version with pre-registered buffers and ring
+        int threadId = pixels::ThreadContext::GetThreadId();
+        struct io_uring* ring = pixels::ThreadContext::GetRing();
+        return std::make_shared<DirectUringRandomAccessFileStatic>(path, threadId, ring);
+    }
+    
+    // Check if dynamic buffer pool is enabled
+    bool useDynamicBuffer = false;
+    try {
+        useDynamicBuffer = ConfigFactory::Instance().boolCheckProperty("pixels.enable.dynamic.buffer");
+    } catch (...) {
+        // Default to false if property not found
+        useDynamicBuffer = false;
+    }
+    
+    if (useDynamicBuffer)
+    {
+        // Use dynamic buffer pool version with io_uring sparse registration
         return std::make_shared<DirectUringRandomAccessFileDynamic>(path);
     }
-    if (GetBufferPoolMode() == BufferPoolMode::NonFixed)
+    else
     {
-        return std::make_shared<DirectUringRandomAccessFileNonFixed>(path);
-    }
-    if (GetBufferPoolMode() == BufferPoolMode::Static)
-    {
-        auto &pool = GlobalStaticBufferPool::Instance();
-        if (!pool.IsInitialized())
-        {
-            auto &config = ConfigFactory::Instance();
-            auto sizePath = config.getProperty("pixel.column.size.path");
-            int blockSize = std::stoi(config.getProperty("localfs.block.size", "4096"));
-            int threads = std::stoi(config.getProperty("pixel.static.buffer.threads", "4"));
-            pool.Initialize(sizePath, blockSize, threads);
+        // Check if we should use fixed buffers
+        bool useFixedBuffer = true;
+        try {
+            useFixedBuffer = ConfigFactory::Instance().boolCheckProperty("localfs.iouring.use.fixed.buffer");
+        } catch (...) {
+            useFixedBuffer = true; // default to fixed buffer for backward compatibility
         }
-        if (staticBufferThreadId < 0)
-        {
-            staticBufferThreadId = pool.AcquireThreadId();
+        
+        if (useFixedBuffer) {
+            // Use static buffer pool version with io_uring fixed buffers
+            return std::make_shared<DirectUringRandomAccessFile>(path);
+        } else {
+            // Use static buffer pool version with io_uring non-fixed buffers
+            return std::make_shared<DirectUringRandomAccessFileNonFixed>(path);
         }
-        return std::make_shared<DirectUringRandomAccessFileStatic>(path, pool.GetRing(staticBufferThreadId));
     }
-    return std::make_shared<DirectUringRandomAccessFile>(path);
 }
 
 std::vector <std::string> LocalFS::listPaths(const std::string &path)
