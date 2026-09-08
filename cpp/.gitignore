@@ -1,4 +1,5 @@
 build/
+testcase/io-uring/results/
 plot
 .idea
 .vscode

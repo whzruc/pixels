@@ -26,6 +26,7 @@ add_subdirectory(pixels-core)
 add_subdirectory(pixels-cli)
 add_subdirectory(third-party/googletest)
 add_subdirectory(tests)
+add_subdirectory(testcase/io-uring)
 
 include_directories(pixels-common/include)
 include_directories(pixels-core/include)

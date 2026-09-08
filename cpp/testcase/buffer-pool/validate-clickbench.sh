@@ -27,7 +27,7 @@ SELECT count(*) FROM hits;
 SELECT count(*) FROM hits WHERE AdvEngineID <> 0;
 SELECT sum(AdvEngineID), count(*), avg(AdvEngineID) FROM hits;"
 
-for mode in legacy dynamic static; do
+for mode in legacy non-fixed dynamic static; do
     pixels_home="$work_dir/$mode"
     mkdir -p "$pixels_home/cpp/etc"
     cp "$cpp_root/etc/pixels-cpp.properties" "$pixels_home/cpp/etc/pixels-cpp.properties"
@@ -42,5 +42,6 @@ done
 
 diff -u "$work_dir/legacy.out" "$work_dir/dynamic.out"
 diff -u "$work_dir/legacy.out" "$work_dir/static.out"
+diff -u "$work_dir/legacy.out" "$work_dir/non-fixed.out"
 cat "$work_dir/legacy.out"
-echo "legacy, dynamic, and static results match"
+echo "legacy, non-fixed, dynamic, and static results match"
