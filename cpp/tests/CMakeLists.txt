@@ -28,9 +28,7 @@
 #include_directories(../pixels-common/include)
 #gtest_discover_tests(unit_tests)
 
-add_subdirectory(writer)
 add_subdirectory(BufferPool)
-add_subdirectory(performanceTest)
-add_subdirectory(column-size-analyzer)
-add_subdirectory(reader-performance-test)
+add_subdirectory(metadata)
+add_subdirectory(writer)
 add_subdirectory(parquet-reader-performance-test)
