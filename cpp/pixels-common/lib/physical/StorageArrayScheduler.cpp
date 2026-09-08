@@ -78,6 +78,11 @@ StorageArrayScheduler::StorageArrayScheduler(std::vector <std::string> &files, i
 int StorageArrayScheduler::acquireDeviceId()
 {
     m.lock();
+    if (devicesNum == 0)
+    {
+        m.unlock();
+        throw InvalidArgumentException("StorageArrayScheduler: no storage devices were found.");
+    }
     int deviceId = currentDeviceID;
     currentDeviceID = (currentDeviceID + 1) % devicesNum;
     m.unlock();
@@ -119,4 +124,3 @@ int StorageArrayScheduler::getBatchID(int deviceID, int fileID)
     result += fileID;
     return result;
 }
-
