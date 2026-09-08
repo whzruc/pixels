@@ -25,6 +25,7 @@
 #include "reader/PixelsRecordReaderImpl.h"
 #include "physical/io/PhysicalLocalReader.h"
 #include "profiler/CountProfiler.h"
+#include "profiler/TimeProfiler.h"
 std::mutex PixelsRecordReaderImpl::mutex_;
 PixelsRecordReaderImpl::PixelsRecordReaderImpl(std::shared_ptr <PhysicalReader> reader,
                                                const pixels::fb::PostScript *pixelsPostScript,
@@ -184,17 +185,21 @@ void PixelsRecordReaderImpl::UpdateRowGroupInfo()
 // read value from chunkBuffer.
 std::shared_ptr <VectorizedRowBatch> PixelsRecordReaderImpl::readBatch(bool reuse)
 {
+    PROFILE_START("PixelsRecordReaderImpl.readBatch.Total");
     if (endOfFile)
     {
         endOfFile = true;
+        PROFILE_END("PixelsRecordReaderImpl.readBatch.Total");
         return createEmptyEOFRowBatch(0);
     }
     if (!everRead)
     {
+        PROFILE_START("PixelsRecordReaderImpl.readBatch.FirstRead");
         if (!read())
         {
             throw std::runtime_error("failed to read file");
         }
+        PROFILE_END("PixelsRecordReaderImpl.readBatch.FirstRead");
     }
 
 
@@ -202,6 +207,7 @@ std::shared_ptr <VectorizedRowBatch> PixelsRecordReaderImpl::readBatch(bool reus
 
 
     // update current batch size
+    PROFILE_START("PixelsRecordReaderImpl.readBatch.PrepareBatch");
     int curBatchSize = std::min(curRGRowCount - curRowInRG, std::min(batchSize, curRGRowCount));
     if (resultRowBatch == nullptr)
     {
@@ -220,14 +226,18 @@ std::shared_ptr <VectorizedRowBatch> PixelsRecordReaderImpl::readBatch(bool reus
     if (filterMask != nullptr) {
         filterMask->set();
     }
+    PROFILE_END("PixelsRecordReaderImpl.readBatch.PrepareBatch");
 
     if(asyncReadRequestNum > 0) {
+        PROFILE_START("PixelsRecordReaderImpl.readBatch.AsyncReadComplete");
         asyncReadComplete(asyncReadRequestNum);
+        PROFILE_END("PixelsRecordReaderImpl.readBatch.AsyncReadComplete");
     }
 
     std::vector<int> filterColumnIndex;
     if (!filter.filters.empty())
     {
+        PROFILE_START("PixelsRecordReaderImpl.readBatch.ReadFilterColumns");
         for (auto const& [col_idx, filter_ptr] : filter.filters)
         {
             if (filterMask->isNone())
@@ -242,17 +252,21 @@ std::shared_ptr <VectorizedRowBatch> PixelsRecordReaderImpl::readBatch(bool reus
                                 columnVectors.at(col_idx), chunkIndex, filterMask);
             filterColumnIndex.emplace_back(index);
 
+            PROFILE_START("PixelsRecordReaderImpl.readBatch.ApplyFilterExpr");
             PixelsFilter::ApplyFilter(
                 columnVectors.at(col_idx),
                 *filter_ptr,
                 *filterMask,
                 resultSchema->getChildren().at(col_idx)
             );
+            PROFILE_END("PixelsRecordReaderImpl.readBatch.ApplyFilterExpr");
         }
+        PROFILE_END("PixelsRecordReaderImpl.readBatch.ReadFilterColumns");
     }
 
 
     // read vectors
+    PROFILE_START("PixelsRecordReaderImpl.readBatch.ReadDataColumns");
     for (int i = 0; i < resultColumns.size(); i++)
     {
         // TODO: Refer to Issue #564. Disable data skipping
@@ -273,8 +287,10 @@ std::shared_ptr <VectorizedRowBatch> PixelsRecordReaderImpl::readBatch(bool reus
                             postScript->pixelStride(), resultRowBatch->rowCount,
                             columnVectors.at(i), chunkIndex, filterMask);
     }
+    PROFILE_END("PixelsRecordReaderImpl.readBatch.ReadDataColumns");
 
     // update current row index in the row group
+    PROFILE_START("PixelsRecordReaderImpl.readBatch.FinalizeBatch");
     curRowInRG += curBatchSize;
     resultRowBatch->rowCount += curBatchSize;
     // update row group index if current row index exceeds max row count in the row group
@@ -293,6 +309,8 @@ std::shared_ptr <VectorizedRowBatch> PixelsRecordReaderImpl::readBatch(bool reus
         }
         curRowInRG = 0;
     }
+    PROFILE_END("PixelsRecordReaderImpl.readBatch.FinalizeBatch");
+    PROFILE_END("PixelsRecordReaderImpl.readBatch.Total");
     return resultRowBatch;
 }
 
@@ -364,7 +382,9 @@ void PixelsRecordReaderImpl::prepareRead()
         }
     }
     Scheduler *scheduler = SchedulerFactory::Instance()->getScheduler();
+    PROFILE_START("Pixels.Metadata.RowGroupFooterRead");
     auto bbs = scheduler->executeBatch(physicalReader, requestBatch, queryId);
+    PROFILE_END("Pixels.Metadata.RowGroupFooterRead");
     // TODO: the return value should be unique_ptr?
 
     for (int i = 0; i < bbs.size(); i++)
@@ -420,9 +440,12 @@ std::shared_ptr <PixelsBitMask> PixelsRecordReaderImpl::getFilterMask()
 
 bool PixelsRecordReaderImpl::read()
 {
+    PROFILE_START("PixelsRecordReaderImpl.read.Total");
     if (!everPrepareRead)
     {
+        PROFILE_START("PixelsRecordReaderImpl.read.PrepareRead");
         prepareRead();
+        PROFILE_END("PixelsRecordReaderImpl.read.PrepareRead");
     }
 
     everRead = true;
@@ -455,6 +478,7 @@ bool PixelsRecordReaderImpl::read()
 
     if (!diskChunks.empty())
     {
+        PROFILE_START("PixelsRecordReaderImpl.read.PrepareChunks");
         // std::lock_guard<std::mutex> lock(mutex_);
         RequestBatch requestBatch((int) diskChunks.size());
         Scheduler *scheduler = SchedulerFactory::Instance()->getScheduler();
@@ -490,11 +514,14 @@ bool PixelsRecordReaderImpl::read()
                 ring_col.emplace_back(i);
             }
         }
+        PROFILE_END("PixelsRecordReaderImpl.read.PrepareChunks");
 
         // ::BufferPool::PrintStats();
 
-           auto byteBuffers = scheduler->executeBatch(
+        PROFILE_START("PixelsRecordReaderImpl.read.ExecuteIO");
+        auto byteBuffers = scheduler->executeBatch(
             physicalReader, requestBatch, originalByteBuffers, queryId);
+        PROFILE_END("PixelsRecordReaderImpl.read.ExecuteIO");
 
         if(ConfigFactory::Instance().boolCheckProperty("localfs.enable.async.io")
             && originalByteBuffers.size() > 0)
@@ -502,6 +529,7 @@ bool PixelsRecordReaderImpl::read()
             asyncReadRequestNum += diskChunks.size();
         }
 
+        PROFILE_START("PixelsRecordReaderImpl.read.AssignBuffers");
         for (int index = 0; index < diskChunks.size(); index++)
         {
             ChunkId chunk = diskChunks.at(index);
@@ -513,7 +541,9 @@ bool PixelsRecordReaderImpl::read()
                 chunkBuffers.at(colId) = bb;
             }
         }
+        PROFILE_END("PixelsRecordReaderImpl.read.AssignBuffers");
     }
+    PROFILE_END("PixelsRecordReaderImpl.read.Total");
     return true;
 
 }

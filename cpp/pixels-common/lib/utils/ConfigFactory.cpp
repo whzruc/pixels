@@ -100,6 +100,24 @@ bool ConfigFactory::boolCheckProperty(std::string key)
     }
 }
 
+bool ConfigFactory::getBoolProperty(const std::string &key, bool defaultValue)
+{
+    auto property = prop.find(key);
+    if (property == prop.end())
+    {
+        return defaultValue;
+    }
+    if (property->second == "true")
+    {
+        return true;
+    }
+    if (property->second == "false")
+    {
+        return false;
+    }
+    return defaultValue;
+}
+
 std::string ConfigFactory::getPixelsDirectory()
 {
     return pixelsHome;
