@@ -5,11 +5,13 @@
 # 在 run_suite.sh 基础上，设置 Parquet 专用默认值：
 #   BENCHMARK_PREFIX = clickbench-parquet-uring-e0
 #   BUFFER_MODES     = pq-async-doublebuffer pq-async-singlebuffer pq-pread
-#   SSD_MODES        = 1ssd  （默认只跑单盘，加快速度）
+#   SSD_MODES        = 24ssd
+#   QUERY            = q24
+#   THREAD_LIST      = 48
 #
 # 用法：
 #   cd testcase/performance-test
-#   ./run_suite_parquet_uring.sh                # 默认 q45，1ssd，3种 Parquet 模式
+#   ./run_suite_parquet_uring.sh                # 默认 q24，24ssd，48线程，3种 Parquet 模式
 #
 # 覆盖示例：
 #   QUERY=q01 SSD_MODES="1ssd 6ssd" ./run_suite_parquet_uring.sh
@@ -28,10 +30,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ── Parquet-specific defaults ────────────────────────────────────────────────
 export BENCHMARK_PREFIX="${BENCHMARK_PREFIX:-clickbench-parquet-uring-e0}"
-export SSD_MODES="${SSD_MODES:-1ssd}"
+export SSD_MODES="${SSD_MODES:-24ssd}"
 export BUFFER_MODES="${BUFFER_MODES:-pq-async-doublebuffer pq-async-singlebuffer pq-pread}"
-export QUERY="${QUERY:-q45}"
-export THREAD_LIST="${THREAD_LIST:-1 8 24}"
+export QUERY="${QUERY:-q24}"
+export QUERIES="${QUERIES:-$QUERY}"
+export THREAD_LIST="${THREAD_LIST:-48}"
 
 # duckdb.bin 比 duckdb 更新（包含 read_parquet_uring）
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -42,9 +45,11 @@ elif [[ -x "$REPO_ROOT/build/release/duckdb" ]]; then
 fi
 
 echo "[parquet-uring suite] BENCHMARK_PREFIX=$BENCHMARK_PREFIX"
-echo "[parquet-pixels suite] SSD_MODES=$SSD_MODES"
-echo "[parquet-pixels suite] BUFFER_MODES=$BUFFER_MODES"
-echo "[parquet-pixels suite] DUCKDB_BINARY=${DUCKDB_BINARY:-<default>}"
+echo "[parquet-uring suite] QUERIES=$QUERIES"
+echo "[parquet-uring suite] SSD_MODES=$SSD_MODES"
+echo "[parquet-uring suite] THREAD_LIST=$THREAD_LIST"
+echo "[parquet-uring suite] BUFFER_MODES=$BUFFER_MODES"
+echo "[parquet-uring suite] DUCKDB_BINARY=${DUCKDB_BINARY:-<default>}"
 echo ""
 
 exec "$SCRIPT_DIR/run_suite.sh" "$@"

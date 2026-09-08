@@ -1,5 +1,5 @@
 #project(tests)
-#
+
 #include(FetchContent)
 #FetchContent_Declare(
 #        googletest
@@ -8,26 +8,29 @@
 #
 #set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 #FetchContent_MakeAvailable(googletest)
-#
+
 #enable_testing()
-#
-#
+
+
 #add_executable(
 #        unit_tests
 #        UnitTests.cpp)
-#
+
 #target_link_libraries(
 #        unit_tests
 #        GTest::gtest_main
 #        pixels-common
 #        pixels-core
 #)
-#
+
 #include(GoogleTest)
 #include_directories(../pixels-core/include)
 #include_directories(../pixels-common/include)
 #gtest_discover_tests(unit_tests)
 
-add_subdirectory(BufferPool)
-add_subdirectory(metadata)
 add_subdirectory(writer)
+add_subdirectory(BufferPool)
+add_subdirectory(performanceTest)
+add_subdirectory(column-size-analyzer)
+add_subdirectory(reader-performance-test)
+add_subdirectory(parquet-reader-performance-test)
