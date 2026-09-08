@@ -348,12 +348,11 @@ static void BuildCurrArrowReader(
     for (int rg = 0; rg < static_cast<int>(fm.rg_columns.size()); rg++)
         all_row_groups.push_back(rg);
 
-    auto res = lstate.curr_arrow_reader->GetRecordBatchReader(all_row_groups, lstate.col_ids);
-    if (!res.ok())
+    auto status = lstate.curr_arrow_reader->GetRecordBatchReader(
+        all_row_groups, lstate.col_ids, &lstate.curr_batch_reader);
+    if (!status.ok())
         throw std::runtime_error(
-            "GetRecordBatchReader failed: " + res.status().ToString());
-
-    lstate.curr_batch_reader = std::move(res).ValueOrDie();
+            "GetRecordBatchReader failed: " + status.ToString());
     lstate.curr_batch.reset();
     lstate.curr_batch_offset = 0;
     PROFILE_END("Parquet.Decode.BuildReader");

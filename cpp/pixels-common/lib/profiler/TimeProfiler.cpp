@@ -24,6 +24,7 @@
  */
 #include "profiler/TimeProfiler.h"
 #include "profiler/ProfilerSwitch.h"
+#include <iomanip>
 #include <sstream>
 
 thread_local std::map<std::string, std::chrono::steady_clock::time_point>
@@ -155,4 +156,43 @@ void TimeProfiler::Collect()
         }
     }
     localResult.clear();
+}
+
+void TimeProfiler::PrintSummary(const std::string& baseLabel,
+                                const std::vector<std::string>& labels,
+                                const std::string& title)
+{
+    if (!IsPixelsProfilerEnabled())
+    {
+        return;
+    }
+    std::unique_lock<std::mutex> parallel_lock(lock);
+    long baseValue = 0;
+    auto baseIter = globalResult.find(baseLabel);
+    if (baseIter != globalResult.end())
+    {
+        baseValue = baseIter->second;
+    }
+
+    std::cout << "\n=== " << title << " ===" << std::endl;
+    std::cout << "label,thread_time_s,base_ratio_pct" << std::endl;
+    auto oldFlags = std::cout.flags();
+    auto oldPrecision = std::cout.precision();
+    std::cout << std::fixed << std::setprecision(6);
+    for (const auto& label : labels)
+    {
+        long value = 0;
+        auto iter = globalResult.find(label);
+        if (iter != globalResult.end())
+        {
+            value = iter->second;
+        }
+        const double seconds = 1.0 * value / 1000000000.0;
+        const double ratio = baseValue > 0 ? (100.0 * value / baseValue) : 0.0;
+        std::cout << label << "," << seconds << "," << ratio << std::endl;
+    }
+    std::cout << "base_total," << (1.0 * baseValue / 1000000000.0)
+              << ",100.000000" << std::endl;
+    std::cout.flags(oldFlags);
+    std::cout.precision(oldPrecision);
 }
