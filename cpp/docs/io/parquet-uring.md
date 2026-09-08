@@ -14,7 +14,18 @@ parquet实现基于io_uring的async I/O机制,探究parquet异步读取的性能
 
 ## 测试方法
 - 功能性测试 可以跑通clickbench 44条查询 同时需要提供相关的测试脚本
-- 性能测试能通过 `testcase/buffer-perf-concurrency-suite/run_suite_parquet_uring.sh` 运行，并输出正确的 perf 火焰图
+- 性能测试通过 `testcase/performance-test/run_suite_parquet_uring.sh` 运行，并输出 perf、iostat 和火焰图结果。
+- 默认测试组合为 ClickBench `q24`、`24ssd`、`48` 线程，并依次运行
+  `pq-async-doublebuffer`、`pq-async-singlebuffer` 和 `pq-pread`。运行命令：
+
+```bash
+cd cpp
+sudo -E bash testcase/performance-test/run_suite_parquet_uring.sh
+```
+
+运行前应确认 `/data/9a3-01` 到 `/data/9a3-24` 均已挂载，且每块盘上存在
+`clickbench/parquet-e0/hits/*.parquet`。对应数据集定义在
+`testcase/benchmark.json` 的 `clickbench-parquet-uring-e0-24ssd` 项中。
 
 ## 阶段耗时分析
 
