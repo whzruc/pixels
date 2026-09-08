@@ -18,7 +18,6 @@
 
 - `CPUAffinityTest`：3/3 通过
 - `PixelsFooterCacheTest`：4/4 通过
-- `ColumnVectorBufferPoolTest`：2/2 通过
 - `DynamicBufferPoolTest`：3/3 通过
 - `GlobalStaticBufferPoolTest`：1/1 通过
 - `DirectUringNonFixedTest`：1/1 通过

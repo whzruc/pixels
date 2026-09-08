@@ -42,6 +42,11 @@ public:
 
   void *current() override;
 
+  // Reader fast path: the backing storage is owned by the thread-local I/O
+  // buffer, not by this vector.
+  void setExternalData(int *data);
+  void ensureOwnedData();
+
   ~IntColumnVector();
 
   void print(int rowCount) override;

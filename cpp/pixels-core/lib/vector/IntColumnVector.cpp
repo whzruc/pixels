@@ -22,6 +22,8 @@
  * @create 2025-04-01
  */
 #include <algorithm>
+#include <cstdlib>
+#include <new>
 #include <vector/IntColumnVector.h>
 
 IntColumnVector::IntColumnVector(uint64_t len, bool encoding, bool isLong)
@@ -72,6 +74,31 @@ void *IntColumnVector::current()
     {
         return intVector + readIndex;
     }
+}
+
+void IntColumnVector::setExternalData(int *data)
+{
+    if (ownsData && intVector != nullptr)
+    {
+        free(intVector);
+    }
+    intVector = data;
+    ownsData = false;
+}
+
+void IntColumnVector::ensureOwnedData()
+{
+    if (ownsData && intVector != nullptr)
+    {
+        return;
+    }
+    posix_memalign(reinterpret_cast<void **>(&intVector), 32,
+                   length * sizeof(int32_t));
+    if (intVector == nullptr)
+    {
+        throw std::bad_alloc();
+    }
+    ownsData = true;
 }
 
 void IntColumnVector::add(std::string &value)
