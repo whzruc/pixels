@@ -64,6 +64,8 @@ public:
 
   std::string getName() override;
 
+  std::string getPath() override;
+
   void addRingIndex(int ringIndex);
 
   std::unordered_set<int>& getRingIndexes();
