@@ -2,7 +2,7 @@
 
 ## Summary
 
-This PR completes the Parquet io_uring scan integration and restores the
+This PR completes the Parquet io_uring scan integration and provides the
 corresponding benchmark/test entry points. It supports asynchronous Parquet
 scanning with single-buffer and double-buffer modes, plus a synchronous pread
 baseline.
@@ -11,9 +11,12 @@ baseline.
 
 - Completed the Parquet scan pipeline and profiling summaries for scan,
   decode, Arrow-to-DuckDB conversion, I/O submission/wait, and initialization.
-- Restored the Parquet benchmark wrapper with explicit defaults for Q24,
+- Added the Parquet benchmark wrapper with explicit defaults for Q24,
   24 SSDs, and 48 worker threads.
-- Restored Parquet reader performance test sources and configuration files.
+- Added Parquet reader performance test sources and configuration files.
+- Pinned Apache Arrow 18.0.0 as `cpp/third-party/arrow`; Arrow and Parquet
+  headers and libraries are built from that source tree rather than discovered
+  from a system Arrow installation.
 - Added/updated CMake test registration for the Parquet reader benchmark.
 - Preserved the existing `pq-async-singlebuffer`,
   `pq-async-doublebuffer`, and `pq-pread` modes.
