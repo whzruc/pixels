@@ -32,6 +32,7 @@ class IntColumnVector : public ColumnVector
 {
 public:
   int *intVector;
+  bool ownsData = true;
 
   /**
     * Use this constructor by default. All column vectors

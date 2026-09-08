@@ -13,3 +13,6 @@
 [submodule "cpp/third-party/flatbuffers"]
 	path = cpp/third-party/flatbuffers
 	url = https://github.com/google/flatbuffers.git
+[submodule "cpp/third-party/arrow"]
+	path = cpp/third-party/arrow
+	url = https://github.com/apache/arrow.git

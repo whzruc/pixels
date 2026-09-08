@@ -125,39 +125,6 @@ void ColumnReader::setValid(const std::shared_ptr<ByteBuffer> &input,
                             bool hasNull, int vectorIndex, int size,
                             bool littleEndian)
 {
-    // Match the archive's byte-wise path for the common little-endian,
-    // batch-aligned layout. Keep the general loop below for partial or
-    // big-endian layouts.
-    if (vectorIndex == 0 && littleEndian)
-    {
-        if (columnVector->ownsIsNull)
-        {
-            delete[] columnVector->isNull;
-        }
-        columnVector->isNull = input->getPointer() + isNullOffset;
-        columnVector->ownsIsNull = false;
-
-        const int byteSize = (size + 7) / 8;
-        if (hasNull)
-        {
-            auto *validity = reinterpret_cast<uint8_t *>(columnVector->isValid);
-            const auto *nulls = columnVector->isNull;
-            for (int byteOffset = 0; byteOffset < byteSize; ++byteOffset)
-            {
-                validity[byteOffset] = static_cast<uint8_t>(~nulls[byteOffset]);
-            }
-            columnVector->noNulls = false;
-            isNullOffset += byteSize;
-        }
-        else
-        {
-            memset(reinterpret_cast<uint8_t *>(columnVector->isValid),
-                   0xFF, byteSize);
-            columnVector->noNulls = true;
-        }
-        return;
-    }
-
     auto *validity = reinterpret_cast<uint8_t *>(columnVector->isValid);
     const uint8_t *nulls = input->getPointer() + isNullOffset;
 
