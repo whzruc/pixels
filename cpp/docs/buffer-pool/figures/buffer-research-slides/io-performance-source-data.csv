@@ -1,0 +1,26 @@
+scope,path,threads_or_ssds,mode,read_iops,read_gib_s,read_gb_s,notes
+raw-physical,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,12,non-fixed,,61.6336,66.18,24 SSD; 1 MiB requests; median of 3
+raw-physical,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,12,dynamic,,64.0782,68.80,24 SSD; 1 MiB requests; median of 3
+raw-physical,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,12,static,,64.0195,68.74,24 SSD; 1 MiB requests; median of 3
+raw-physical,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,24,non-fixed,,102.046,109.57,24 SSD; 1 MiB requests; median of 3
+raw-physical,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,24,dynamic,,102.045,109.57,24 SSD; 1 MiB requests; median of 3
+raw-physical,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,24,static,,102.170,109.70,24 SSD; 1 MiB requests; median of 3
+raw-physical,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,48,non-fixed,,102.321,109.87,24 SSD; 1 MiB requests; median of 3
+raw-physical,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,48,dynamic,,102.579,110.14,24 SSD; 1 MiB requests; median of 3
+raw-physical,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,48,static,,102.765,110.34,24 SSD; 1 MiB requests; median of 3
+raw-device-scaling,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,1,non-fixed,,,6.14,aggregate
+raw-device-scaling,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,4,non-fixed,,,23.47,aggregate
+raw-device-scaling,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,8,non-fixed,,,44.07,aggregate
+raw-device-scaling,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,12,non-fixed,,,54.18,aggregate
+raw-device-scaling,testcase/io-uring/PERFORMANCE_REPORT.zh-CN.md,24,non-fixed,,,109.12,aggregate
+q24-spdk,testcase/performance-test/comparison-results/comparison-total-20260813_173408/comparison-total-20260813_173408-spdk/summary_io.csv,12,spdk,11421.469642,12.334786,,internal completions
+q24-spdk,testcase/performance-test/comparison-results/comparison-total-20260813_173408/comparison-total-20260813_173408-spdk/summary_io.csv,24,spdk,22394.276980,24.185033,,internal completions
+q24-spdk,testcase/performance-test/comparison-results/comparison-total-20260813_173408/comparison-total-20260813_173408-spdk/summary_io.csv,48,spdk,32991.826351,35.630015,,internal completions
+q24-spdk,testcase/performance-test/comparison-results/comparison-total-20260813_173408/comparison-total-20260813_173408-spdk/summary_io.csv,12,spdk-doublebuffer,13904.175929,15.016022,,internal completions
+q24-spdk,testcase/performance-test/comparison-results/comparison-total-20260813_173408/comparison-total-20260813_173408-spdk/summary_io.csv,24,spdk-doublebuffer,25978.288482,28.055640,,internal completions
+q24-spdk,testcase/performance-test/comparison-results/comparison-total-20260813_173408/comparison-total-20260813_173408-spdk/summary_io.csv,48,spdk-doublebuffer,36200.043559,39.094777,,internal completions
+q24-iouring,testcase/performance-test/comparison-results/iouring-device-io-q24-24ssd-20260824_161920/summary_io.csv,12,doublebuffer,35055.2,12.664073,,device iostat
+q24-iouring,testcase/performance-test/comparison-results/iouring-device-io-q24-24ssd-20260824_161920/summary_io.csv,24,doublebuffer,56760.2,20.505342,,device iostat
+q24-iouring,testcase/performance-test/comparison-results/iouring-device-io-q24-24ssd-20260824_161920/summary_io.csv,48,doublebuffer,71601.6,25.867087,,device iostat
+q24-parquet,testcase/performance-test/results/parquet-q24-16ssd-t48-profile-20260908-130714/summary_io.csv,48,pq-async-singlebuffer,7442.2,5.452495,,16 SSD; device iostat
+q24-parquet,testcase/performance-test/results/parquet-q24-16ssd-t48-profile-20260908-130714/summary_io.csv,48,pq-async-doublebuffer,7972.3,5.794369,,16 SSD; device iostat

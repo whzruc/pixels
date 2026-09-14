@@ -25,6 +25,9 @@
 
 ## 性能测试与分析
 
+- [Double Buffer 与选择性 Buffer 扩容：研究概览](buffer-pool/buffer-research-overview.md)
+- [Double Buffer 与选择性 Buffer 扩容：六页 PPT](buffer-pool/buffer-research-overview.pptx)
+- [Selective Growth V2：16 SSD × 44 查询性能报告](buffer-pool/selective-growth-v2-16ssd-results.md)
 - [测试目录总览](../testcase/README-zh.md)
 - [统一性能测试套件](../testcase/performance-test/README.md)
 - [性能瓶颈分析](../testcase/performance-test/PERFORMANCE_ANALYSIS.md)
