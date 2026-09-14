@@ -48,6 +48,8 @@ void GlobalStaticBufferPool::Initialize(const std::string &columnSizePath, int b
     }
 
     maxThreads = threadCount;
+    lockFreeLookup = ConfigFactory::Instance().getProperty(
+                         "pixels.static.buffer.lock_free_lookup", "false") == "true";
     directIoLib = std::make_shared<DirectIoLib>(blockSize);
     bool useHugePage = ConfigFactory::Instance().getProperty("pixel.static.buffer.hugepage", "false") == "true";
     int columnIndex = 0;
@@ -139,6 +141,11 @@ struct io_uring *GlobalStaticBufferPool::GetRing(int threadId) { return rings.at
 std::shared_ptr<ByteBuffer> GlobalStaticBufferPool::GetBuffer(const std::string &columnName, int threadId, int bufferId)
 {
     BufferPoolStats::Instance().RecordReuse(BufferPoolStatsMode::Static);
+    if (!lockFreeLookup)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        return buffers.at(columnName).at(threadId).at(bufferId);
+    }
     return buffers.at(columnName).at(threadId).at(bufferId);
 }
 
@@ -195,5 +202,6 @@ void GlobalStaticBufferPool::Reset()
     directIoLib = nullptr;
     nextThreadId.store(0);
     maxThreads = 0;
+    lockFreeLookup = false;
     initialized = false;
 }

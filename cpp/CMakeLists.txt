@@ -5,6 +5,7 @@ set(TARGET_NAME pixels)
 set(DCMAKE_EXPORT_COMPILE_COMMANDS=1)
 set(EXTENSION_NAME ${TARGET_NAME}_extension)
 project(${TARGET_NAME})
+enable_testing()
 
 add_definitions(-DDUCKDB_EXTENSION_LIBRARY)
 

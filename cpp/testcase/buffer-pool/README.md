@@ -157,3 +157,27 @@ The expected output contains 36 cold cases, 36 warmed-suite cases, and 516
 isolated query cases. The wrapper analyzes the CSV files and fails its final
 completeness check if a case is missing or `failures.csv` is nonempty. Re-run the
 same command and result directory to retry only missing cases.
+
+## Selective Dynamic scheduling
+
+Selective Dynamic retains thread-local Dynamic double buffers, but may route a
+file—after metadata reveals its column-chunk demand—to a worker whose two buffer
+slots already fit it. Receiver queues are bounded; otherwise the original worker
+grows locally. The feature and all V2 policy components are disabled by default.
+
+Run the hardware-independent validation and inspect the full 16-SSD runner with:
+
+```bash
+bash testcase/buffer-pool/test_selective_scheduler.sh
+python3 -m unittest discover -s testcase/buffer-pool -p 'test_*.py'
+python3 testcase/buffer-pool/run_selective_benchmark.py --help
+```
+
+`run_selective_v2_full_16ssd.sh` covers q00-q43, the baseline and V1/V2
+ablation modes, three repeats, `perf stat`, `perf record`, flame graphs, and
+optional queue telemetry. Raw output is written below
+`testcase/buffer-pool/results/` and is intentionally not committed.
+
+See `docs/buffer-pool/selective-growth-v2-optimization-and-test.md` for the
+combined design and test plan, and `docs/buffer-pool/selective-growth-v2-16ssd-results.md`
+for the completed experiment analysis.

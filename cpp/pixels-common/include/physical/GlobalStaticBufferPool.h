@@ -59,6 +59,9 @@ class GlobalStaticBufferPool
     std::shared_ptr<DirectIoLib> directIoLib;
     std::atomic<int> nextThreadId{0};
     int maxThreads = 0;
+    // All lookup containers are immutable after Initialize(). Keep the legacy
+    // mutex path available so the benchmark can isolate lock overhead.
+    bool lockFreeLookup = false;
     bool initialized = false;
 };
 

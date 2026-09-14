@@ -32,6 +32,7 @@
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include "PixelsReader.h"
 #include "reader/PixelsRecordReader.h"
+#include "physical/SelectiveBufferScheduler.h"
 
 namespace duckdb
 {
@@ -68,6 +69,9 @@ namespace duckdb
         idx_t next_batch_index;
         std::string next_file_name;
         std::string curr_file_name;
+        bool cfgSelective = false;
+        size_t selectiveWorker = 0;
+        pixels::SelectiveBufferScheduler::Task selectiveTask{};
     };
 
 }

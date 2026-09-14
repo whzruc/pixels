@@ -58,3 +58,12 @@ target_include_directories(CPUAffinityTest PRIVATE
         ${GTEST_DIR}/googletest/include
         ${PROJECT_SOURCE_DIR}/include
 )
+
+# Pure scheduling tests: no SSDs, DuckDB runtime, or io_uring privileges needed.
+add_executable(SelectiveBufferSchedulerTest SelectiveBufferSchedulerTest.cpp)
+target_include_directories(SelectiveBufferSchedulerTest PRIVATE
+        ${PROJECT_SOURCE_DIR}/pixels-common/include
+)
+target_compile_options(SelectiveBufferSchedulerTest PRIVATE -UNDEBUG)
+target_link_libraries(SelectiveBufferSchedulerTest PRIVATE pthread)
+add_test(NAME SelectiveBufferSchedulerTest COMMAND SelectiveBufferSchedulerTest)

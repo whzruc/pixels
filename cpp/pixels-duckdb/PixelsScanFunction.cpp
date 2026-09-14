@@ -29,10 +29,41 @@
 #include "physical/natives/DirectUringRandomAccessFileDynamic.h"
 #include "physical/natives/DirectUringRandomAccessFileNonFixed.h"
 #include "profiler/CountProfiler.h"
+#include <cmath>
 
-/// @brief 
+/// @brief
 namespace duckdb
 {
+
+static std::string OptionalProperty(const std::string &key, const std::string &fallback)
+{
+  try { return ConfigFactory::Instance().getProperty(key); }
+  catch (...) { return fallback; }
+}
+
+static int IntegerProperty(const std::string &key, int fallback, int minimum, int maximum)
+{
+  const auto value = OptionalProperty(key, std::to_string(fallback));
+  size_t parsed = 0;
+  int result;
+  try { result = std::stoi(value, &parsed); }
+  catch (...) { throw InvalidArgumentException(key + " must be an integer"); }
+  if (parsed != value.size() || result < minimum || result > maximum)
+    throw InvalidArgumentException(key + " is outside the supported range");
+  return result;
+}
+
+static double DoubleProperty(const std::string &key, double fallback, double minimum, double maximum)
+{
+  const auto value = OptionalProperty(key, std::to_string(fallback));
+  size_t parsed = 0;
+  double result;
+  try { result = std::stod(value, &parsed); }
+  catch (...) { throw InvalidArgumentException(key + " must be numeric"); }
+  if (parsed != value.size() || !std::isfinite(result) || result < minimum || result > maximum)
+    throw InvalidArgumentException(key + " is outside the supported range");
+  return result;
+}
 
 bool PixelsScanFunction::enable_filter_pushdown = true;
 
@@ -87,10 +118,15 @@ void PixelsScanFunction::PixelsScanImplementation(ClientContext &context,
     {
     return;
     }
-  
+
   auto &data = (PixelsReadLocalState &) *data_p.local_state;
   auto &gstate = (PixelsReadGlobalState &) *data_p.global_state;
   auto &bind_data = (PixelsReadBindData &) *data_p.bind_data;
+  if (data.cfgSelective)
+    {
+    unique_lock<mutex> guard(gstate.lock);
+    gstate.selective->checkOwner(data.selectiveWorker);
+    }
   //std::cout << "filters ptr: " << gstate.filters << std::endl;
   do
     {
@@ -244,6 +280,54 @@ unique_ptr<GlobalTableFunctionState> PixelsScanFunction::PixelsScanInitGlobal(
 
   result->file_index.resize(result->storageArrayScheduler->getDeviceSum());
 
+  if (ConfigFactory::Instance().getBoolProperty("pixels.dynamic.selective.enabled", false))
+    {
+    auto &config = ConfigFactory::Instance();
+    if (GetBufferPoolMode() != BufferPoolMode::Dynamic ||
+        !config.getBoolProperty("pixels.doublebuffer", false) ||
+        !config.getBoolProperty("localfs.enable.async.io", false) ||
+        config.getProperty("localfs.async.lib") != "iouring")
+      throw InvalidArgumentException(
+          "selective requires dynamic + doublebuffer + io_uring");
+
+    pixels::SelectiveBufferScheduler::Options options;
+    options.queueLimit = IntegerProperty("pixels.dynamic.selective.queue.limit", 1, 0, 64);
+    options.growthGateEnabled = config.getBoolProperty(
+        "pixels.dynamic.selective.growth_gate.enabled", false);
+    options.growthGateMinBytes = static_cast<uint64_t>(IntegerProperty(
+        "pixels.dynamic.selective.growth_gate.min_bytes", 1, 0, 1 << 30));
+    options.growthGateRequireHistory = config.getBoolProperty(
+        "pixels.dynamic.selective.growth_gate.require_history", true);
+    options.costModelEnabled = config.getBoolProperty(
+        "pixels.dynamic.selective.cost.enabled", false);
+    options.costQueueWeight = DoubleProperty(
+        "pixels.dynamic.selective.cost.queue_weight", 1.0, 0.0, 1000.0);
+    options.costQueuedBytesWeight = DoubleProperty(
+        "pixels.dynamic.selective.cost.queued_bytes_weight", 1.0, 0.0, 1000.0);
+    options.costLoadWeight = DoubleProperty(
+        "pixels.dynamic.selective.cost.load_weight", 0.25, 0.0, 1000.0);
+    options.costSlackWeight = DoubleProperty(
+        "pixels.dynamic.selective.cost.slack_weight", 0.01, 0.0, 1000.0);
+    options.adaptiveQueueEnabled = config.getBoolProperty(
+        "pixels.dynamic.selective.adaptive.enabled", false);
+    options.adaptiveQueueMin = IntegerProperty(
+        "pixels.dynamic.selective.adaptive.queue_min", 0, 0, 64);
+    options.adaptiveQueueMax = IntegerProperty(
+        "pixels.dynamic.selective.adaptive.queue_max", 4, 0, 64);
+    options.adaptivePressureLow = DoubleProperty(
+        "pixels.dynamic.selective.adaptive.pressure_low", 0.10, 0.0, 1.0);
+    options.adaptivePressureHigh = DoubleProperty(
+        "pixels.dynamic.selective.adaptive.pressure_high", 0.30, 0.0, 1.0);
+    options.adaptiveWindow = IntegerProperty(
+        "pixels.dynamic.selective.adaptive.window", 64, 1, 1000000);
+    options.metricsEnabled = config.getBoolProperty(
+        "pixels.dynamic.selective.metrics.enabled", false);
+    std::vector<uint64_t> counts;
+    for (int i = 0; i < result->storageArrayScheduler->getDeviceSum(); ++i)
+      counts.push_back(result->storageArrayScheduler->getFileSum(i));
+    result->selective = std::make_unique<pixels::SelectiveBufferScheduler>(counts, options);
+    }
+
   result->max_threads = max_threads;
 
   result->active_threads=max_threads;
@@ -299,6 +383,15 @@ unique_ptr<LocalTableFunctionState> PixelsScanFunction::PixelsScanInitLocal(
   else if (GetBufferPoolMode() == BufferPoolMode::NonFixed)
     {
     ::DirectUringRandomAccessFileNonFixed::Initialize();
+    }
+  result->cfgSelective = gstate.selective != nullptr;
+  if (result->cfgSelective)
+    {
+    unique_lock<mutex> guard(gstate.lock);
+    result->selectiveWorker = gstate.selective->addWorker(
+        result->deviceID, std::this_thread::get_id());
+    gstate.selective->publish(
+        result->selectiveWorker, ::DynamicBufferPool::GetCapacities(), true);
     }
   if (!PixelsParallelStateNext(context.client, bind_data, *result, gstate, true))
     {
@@ -493,10 +586,16 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
   // 2. When PixelsScanImplementation invokes this function (scan_data.next_file_index > -1), if
   // scan_data.next_file_index >= (int) StorageInstance.getFileSum(scan_data.deviceID), it means the current file is already
   // done, so the function return false.
-  if ((is_init_state &&
-      parallel_state.file_index.at(scan_data.deviceID) >= StorageInstance->getFileSum(scan_data.deviceID)) ||
-      scan_data.next_file_index >= StorageInstance->getFileSum(scan_data.deviceID))
+  if (scan_data.cfgSelective
+      ? (!is_init_state && scan_data.nextReader == nullptr)
+      : ((is_init_state &&
+          parallel_state.file_index.at(scan_data.deviceID) >= StorageInstance->getFileSum(scan_data.deviceID)) ||
+         scan_data.next_file_index >= StorageInstance->getFileSum(scan_data.deviceID)))
     {
+    if (scan_data.cfgSelective)
+      {
+      parallel_state.selective->finish(scan_data.selectiveWorker);
+      }
     if (GetBufferPoolMode() == BufferPoolMode::Dynamic)
       {
       ::DirectUringRandomAccessFileDynamic::Reset();
@@ -539,11 +638,21 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
     }
   scan_data.curr_file_index = scan_data.next_file_index;
   scan_data.curr_batch_index = scan_data.next_batch_index;
-  scan_data.next_file_index = parallel_state.file_index.at(scan_data.deviceID);
+  if (scan_data.cfgSelective)
+    {
+    const bool claimed = parallel_state.selective->claim(
+        scan_data.selectiveWorker, scan_data.selectiveTask);
+    scan_data.next_file_index = claimed ? scan_data.selectiveTask.file
+        : StorageInstance->getFileSum(scan_data.deviceID);
+    }
+  else
+    {
+    scan_data.next_file_index = parallel_state.file_index.at(scan_data.deviceID);
+    parallel_state.file_index.at(scan_data.deviceID)++;
+    }
   scan_data.next_batch_index = StorageInstance->getBatchID(scan_data.deviceID, scan_data.next_file_index);
   scan_data.curr_file_name = scan_data.next_file_name;
   bind_data.curFileId.fetch_add(1);
-  parallel_state.file_index.at(scan_data.deviceID)++;
   parallel_lock.unlock();
   // The below code uses global state but no race happens, so we don't need the lock anymore
 
@@ -555,7 +664,10 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
 
   if (ConfigFactory::Instance().getProperty("pixels.doublebuffer")=="true")
   {
-    ::BufferPool::Switch();
+    if (GetBufferPoolMode() == BufferPoolMode::Dynamic)
+      ::DynamicBufferPool::Switch();
+    else
+      ::BufferPool::Switch();
   }
   // double/single buffer
 
@@ -574,7 +686,8 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
 
     currPixelsRecordReader->asyncReadComplete((int) scan_data.column_names.size());
     }
-  if (scan_data.next_file_index < StorageInstance->getFileSum(scan_data.deviceID))
+  unsigned selectiveTransfers = 0;
+  while (scan_data.next_file_index < StorageInstance->getFileSum(scan_data.deviceID))
     {
       auto builder = std::make_shared<PixelsReaderBuilder>();
       std::shared_ptr<::Storage> storage = StorageFactory::getInstance()->getStorage(::Storage::file);
@@ -588,13 +701,55 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
     auto nextPixelsRecordReader = std::static_pointer_cast<PixelsRecordReaderImpl>(
         scan_data.nextPixelsRecordReader);
 
+    if (scan_data.cfgSelective)
+      {
+      auto demand = nextPixelsRecordReader->prepareBufferDemand();
+      auto capacities = ::DynamicBufferPool::GetCapacities();
+      bool transferred;
+      {
+      unique_lock<mutex> guard(parallel_state.lock);
+      parallel_state.selective->publish(scan_data.selectiveWorker, capacities);
+      transferred = parallel_state.selective->route(
+          scan_data.selectiveWorker, scan_data.selectiveTask, demand,
+          capacities[::DynamicBufferPool::GetAllocationBufferIdx()],
+          selectiveTransfers < 2);
+      if (!transferred)
+        parallel_state.selective->recordExecution(
+            scan_data.selectiveWorker, scan_data.selectiveTask, demand);
+      }
+      if (transferred)
+        {
+        // Only metadata was read. Rebuild the reader on the receiving worker;
+        // buffer pointers and io_uring state always stay thread-local.
+        scan_data.nextPixelsRecordReader.reset();
+        scan_data.nextReader->close();
+        scan_data.nextReader.reset();
+        ++selectiveTransfers;
+        unique_lock<mutex> guard(parallel_state.lock);
+        const bool claimed = parallel_state.selective->claim(
+            scan_data.selectiveWorker, scan_data.selectiveTask);
+        scan_data.next_file_index = claimed ? scan_data.selectiveTask.file
+            : StorageInstance->getFileSum(scan_data.deviceID);
+        scan_data.next_batch_index = StorageInstance->getBatchID(
+            scan_data.deviceID, scan_data.next_file_index);
+        continue;
+        }
+      }
+
     if (ConfigFactory::Instance().getProperty("pixels.doublebuffer")=="true")
     {
       //double buffer
       nextPixelsRecordReader->read();
     }
+    if (scan_data.cfgSelective)
+      {
+      unique_lock<mutex> guard(parallel_state.lock);
+      parallel_state.selective->publish(
+          scan_data.selectiveWorker, ::DynamicBufferPool::GetCapacities());
+      }
+    break;
     }
-  else
+  if (scan_data.next_file_index >= StorageInstance->getFileSum(scan_data.deviceID))
     {
     scan_data.nextReader = nullptr;
     scan_data.nextPixelsRecordReader = nullptr;
@@ -632,7 +787,7 @@ pixels::ConstantFilter ConvertConstantFilter(const ConstantFilter &filter) {
         case LogicalTypeId::INTEGER:{
             val.set(filter.constant.GetValue<int32_t>());
             break;
-        }  
+        }
         case LogicalTypeId::BIGINT:{
             val.set(filter.constant.GetValue<int64_t>());
             break;
@@ -640,14 +795,14 @@ pixels::ConstantFilter ConvertConstantFilter(const ConstantFilter &filter) {
         case LogicalTypeId::VARCHAR:{
             val.set(filter.constant.GetValue<std::string>());
             break;
-        }   
+        }
         case LogicalTypeId::DATE: {
             auto d = filter.constant.GetValue<date_t>();
             val.set(d.days);   //convert to int
             break;
         }
         case duckdb::LogicalTypeId::DECIMAL: {
-            double decimal_value = filter.constant.GetValue<double>(); 
+            double decimal_value = filter.constant.GetValue<double>();
             int32_t scale = DecimalType::GetScale(filter.constant.type());
             for(int i=0;i<scale;i++){
               decimal_value*=10;
@@ -669,7 +824,7 @@ pixels::ConstantFilter ConvertConstantFilter(const ConstantFilter &filter) {
 static std::unique_ptr<pixels::TableFilter>
 ConvertConjunctionFilter(const ConjunctionFilter &duck_filter) {
     std::unique_ptr<pixels::ConjunctionFilter> result;
-    
+
     if (duck_filter.filter_type == TableFilterType::CONJUNCTION_AND) {
         result = std::make_unique<pixels::ConjunctionAndFilter>();
     } else {
@@ -680,13 +835,13 @@ ConvertConjunctionFilter(const ConjunctionFilter &duck_filter) {
         switch (child_ref.filter_type) {
         case TableFilterType::CONSTANT_COMPARISON: {
             const auto &cf = static_cast<const ConstantFilter &>(child_ref);
-            result->child_filters.push_back(std::make_unique<pixels::ConstantFilter>(ConvertConstantFilter(cf)));   
+            result->child_filters.push_back(std::make_unique<pixels::ConstantFilter>(ConvertConstantFilter(cf)));
             break;
         }
         case TableFilterType::CONJUNCTION_AND:
         case TableFilterType::CONJUNCTION_OR: {
             const auto &child_conj =static_cast<const ConjunctionFilter &>(child_ref);
-            result->child_filters.push_back(ConvertConjunctionFilter(child_conj)); 
+            result->child_filters.push_back(ConvertConjunctionFilter(child_conj));
             break;
         }
         case TableFilterType::IS_NULL:
@@ -720,7 +875,7 @@ pixels::TableFilterSet PixelsScanFunction::ConvertDuckDBFilter(TableFilterSet* f
                 pixel_filters.filters[col_idx] =ConvertConjunctionFilter(conj);
                 break;
             }
-            
+
             case TableFilterType::IS_NULL://nothing to do
                 break;
             case TableFilterType::IS_NOT_NULL://nothing to do
@@ -737,7 +892,7 @@ pixels::TableFilterSet PixelsScanFunction::ConvertDuckDBFilter(TableFilterSet* f
                 break;
         }
     }
-    return pixel_filters; 
+    return pixel_filters;
 
 }
 
@@ -754,7 +909,7 @@ PixelsReaderOption PixelsScanFunction::GetPixelsReaderOption(PixelsReadLocalStat
     option.setIncludeCols(local_state.column_names);
     option.setRGRange(0, local_state.nextReader->getRowGroupNum());
     option.setQueryId(1);
-    
+
     int stride = std::stoi(ConfigFactory::Instance().getProperty("pixel.stride"));
     option.setBatchSize(stride);
 
