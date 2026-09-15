@@ -169,9 +169,17 @@ std::shared_ptr<ByteBuffer> DirectIoLib::read(int fd, long fileOffset,
         perror("pread failed");
         throw InvalidArgumentException("DirectIoLib::read: pread fail. ");
     }
-    auto bb = std::make_shared<ByteBuffer>(*directBuffer,
-                                           fileOffset - fileOffsetAligned, length);
-    return bb;
+    // ByteBuffer views do not own their backing allocation.  Metadata views
+    // can outlive the PhysicalReader that issued this read (the shared footer
+    // cache and selective task transfer both rely on that), so retain the
+    // direct buffer in the view's deleter.  Deleting the view itself is still
+    // required; its destructor will not free the borrowed byte range.
+    auto *view = new ByteBuffer(*directBuffer, fileOffset - fileOffsetAligned, length);
+    return std::shared_ptr<ByteBuffer>(view,
+        [owner = std::move(directBuffer)](ByteBuffer *buffer) mutable {
+            delete buffer;
+            owner.reset();
+        });
 }
 
 

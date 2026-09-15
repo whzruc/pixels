@@ -28,6 +28,12 @@ class ConfigurationTest(unittest.TestCase):
         self.assertEqual(lockfree['pixel.enable.globalStaticBytebuffer'], 'true')
         self.assertEqual(lockfree['pixels.static.buffer.lock_free_lookup'], 'true')
 
+    def test_buffer_hugepage_override(self):
+        text = runner.properties('pixel.bufferpool.hugepage=true\n', 'legacy', 4,
+                                 Path('/tmp/sizes.csv'), 'off')
+        c = dict(line.split('=', 1) for line in text.splitlines())
+        self.assertEqual(c['pixel.bufferpool.hugepage'], 'false')
+
     def test_queue_sweep(self):
         for limit in (0, 1, 2, 4):
             c = self.config(f'selective-{limit}')
@@ -67,6 +73,17 @@ class ConfigurationTest(unittest.TestCase):
         with self.assertRaises(Exception):
             runner.nonempty_path('   ')
         self.assertEqual(runner.nonempty_path('/tmp/result'), Path('/tmp/result'))
+
+    def test_mode_properties_support_current_and_legacy_config_factory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            explicit_path, legacy_home = runner.install_mode_properties(
+                output, 'dynamic', 'pixel.column.size.path=/tmp/sizes.csv\n')
+            self.assertEqual(explicit_path.read_text(),
+                             'pixel.column.size.path=/tmp/sizes.csv\n')
+            self.assertEqual(
+                (legacy_home / 'cpp/etc/pixels-cpp.properties').read_text(),
+                explicit_path.read_text())
 
     def test_resume_reads_completed_summary_rows(self):
         with tempfile.TemporaryDirectory() as directory:

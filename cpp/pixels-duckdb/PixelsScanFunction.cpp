@@ -26,6 +26,8 @@
 #include "CPUAffinity.h"
 #include "physical/StorageArrayScheduler.h"
 #include "physical/BufferPoolMode.h"
+#include "physical/GlobalStaticBufferPool.h"
+#include "physical/ThreadContext.h"
 #include "physical/natives/DirectUringRandomAccessFileDynamic.h"
 #include "physical/natives/DirectUringRandomAccessFileNonFixed.h"
 #include "profiler/CountProfiler.h"
@@ -376,11 +378,34 @@ unique_ptr<LocalTableFunctionState> PixelsScanFunction::PixelsScanInitLocal(
       }
     }
 
-  if (GetBufferPoolMode() == BufferPoolMode::Legacy)
+  const auto bufferPoolMode = GetBufferPoolMode();
+  result->cfgDoubleBuffer = ConfigFactory::Instance().getBoolProperty(
+      "pixels.doublebuffer", false);
+  result->cfgDynamicBuffer = bufferPoolMode == BufferPoolMode::Dynamic;
+
+  if (bufferPoolMode == BufferPoolMode::Static)
+    {
+    auto &pool = ::GlobalStaticBufferPool::Instance();
+    if (!pool.IsInitialized())
+      {
+      throw InvalidArgumentException(
+          "PixelsScanInitLocal: GlobalStaticBufferPool is not initialized");
+      }
+    result->threadId = pool.AcquireThreadId();
+    result->ring = pool.GetRing(result->threadId, 0);
+    result->prefetchRing = pool.GetRing(result->threadId, 1);
+    pixels::ThreadContext::SetThreadId(result->threadId);
+    pixels::ThreadContext::SetRings(result->ring, result->prefetchRing);
+    }
+  else if (bufferPoolMode == BufferPoolMode::Dynamic)
+    {
+    ::DirectUringRandomAccessFileDynamic::Initialize(4096, 1024);
+    }
+  else if (bufferPoolMode == BufferPoolMode::Legacy)
     {
     ::DirectUringRandomAccessFile::Initialize();
     }
-  else if (GetBufferPoolMode() == BufferPoolMode::NonFixed)
+  else if (bufferPoolMode == BufferPoolMode::NonFixed)
     {
     ::DirectUringRandomAccessFileNonFixed::Initialize();
     }
@@ -403,7 +428,7 @@ unique_ptr<LocalTableFunctionState> PixelsScanFunction::PixelsScanInitLocal(
 void PixelsScanFunction::TransformDuckdbType(const std::shared_ptr<TypeDescription> &type,
                                              vector<LogicalType> &return_types)
 {
-  auto columnSchemas = type->getChildren();
+  const auto &columnSchemas = type->getChildren();
   for (auto columnType : columnSchemas)
     {
     switch (columnType->getCategory())
@@ -662,12 +687,18 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
     scan_data.currReader->close();
     }
 
-  if (ConfigFactory::Instance().getProperty("pixels.doublebuffer")=="true")
+  if (scan_data.cfgDoubleBuffer)
   {
-    if (GetBufferPoolMode() == BufferPoolMode::Dynamic)
+    if (scan_data.cfgDynamicBuffer)
       ::DynamicBufferPool::Switch();
     else
       ::BufferPool::Switch();
+    if (!is_init_state && scan_data.prefetchRing != nullptr)
+      {
+      pixels::ThreadContext::SwapRings();
+      scan_data.ring = pixels::ThreadContext::GetCurrentRing();
+      scan_data.prefetchRing = pixels::ThreadContext::GetPrefetchRing();
+      }
   }
   // double/single buffer
 
@@ -678,7 +709,7 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
     {
     auto currPixelsRecordReader = std::static_pointer_cast<PixelsRecordReaderImpl>(
         scan_data.currPixelsRecordReader);
-    if (ConfigFactory::Instance().getProperty("pixels.doublebuffer")=="false")
+    if (!scan_data.cfgDoubleBuffer)
     {
       //single buffer
       currPixelsRecordReader->read();
@@ -692,10 +723,19 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
       auto builder = std::make_shared<PixelsReaderBuilder>();
       std::shared_ptr<::Storage> storage = StorageFactory::getInstance()->getStorage(::Storage::file);
       scan_data.next_file_name = StorageInstance->getFileName(scan_data.deviceID, scan_data.next_file_index);
+      const bool usePrefetchRing = scan_data.cfgDoubleBuffer && scan_data.prefetchRing != nullptr;
+      if (usePrefetchRing)
+        {
+        pixels::ThreadContext::UsePrefetchRing();
+        }
       scan_data.nextReader = builder->setPath(scan_data.next_file_name)
           ->setStorage(storage)
           ->setPixelsFooterCache(parallel_state.footerCache)
           ->build();
+      if (usePrefetchRing)
+        {
+        pixels::ThreadContext::UseCurrentRing();
+        }
     PixelsReaderOption option = GetPixelsReaderOption(scan_data, parallel_state);
     scan_data.nextPixelsRecordReader = scan_data.nextReader->read(std::move(option));
     auto nextPixelsRecordReader = std::static_pointer_cast<PixelsRecordReaderImpl>(
@@ -736,7 +776,7 @@ bool PixelsScanFunction::PixelsParallelStateNext(ClientContext &context, PixelsR
         }
       }
 
-    if (ConfigFactory::Instance().getProperty("pixels.doublebuffer")=="true")
+    if (scan_data.cfgDoubleBuffer)
     {
       //double buffer
       nextPixelsRecordReader->read();

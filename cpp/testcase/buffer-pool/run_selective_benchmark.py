@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import random
 import re
+import shutil
 import subprocess
 import time
 
@@ -51,7 +52,7 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
-def properties(source, mode, threads, column_sizes):
+def properties(source, mode, threads, column_sizes, buffer_hugepages='config'):
     values = {}
     for line in source.splitlines():
         if '=' in line and not line.lstrip().startswith('#'):
@@ -66,6 +67,8 @@ def properties(source, mode, threads, column_sizes):
     else:
         queue_limit = '0'
     static = mode in ('static', 'static-locked', 'static-lockfree')
+    if buffer_hugepages != 'config':
+        values['pixel.bufferpool.hugepage'] = 'true' if buffer_hugepages == 'on' else 'false'
     values.update({
         'pixels.dynamic.selective.enabled': str(selective).lower(),
         'pixels.dynamic.selective.queue.limit': queue_limit,
@@ -88,6 +91,9 @@ def properties(source, mode, threads, column_sizes):
         'pixel.enable.globalStaticBytebuffer': str(static).lower(),
         'pixels.static.buffer.lock_free_lookup': str(mode == 'static-lockfree').lower(),
         'pixel.enable.globalBytebuffer': 'false',
+        # BufferPool reads the historical lower-case spelling.  Keep the
+        # camel-case alias for compatibility with older generated configs.
+        'pixel.bufferpool.fixedsize': 'false',
         'pixel.bufferpool.fixedSize': 'false',
         'pixel.bufferpool.mode': 'dynamic' if selective else ('static' if static else mode),
         'localfs.enable.async.io': 'true', 'localfs.async.lib': 'iouring',
@@ -100,6 +106,21 @@ def properties(source, mode, threads, column_sizes):
         'pixel.enable.profiler': 'false',
     })
     return ''.join(f'{key}={value}\n' for key, value in sorted(values.items()))
+
+
+def install_mode_properties(output, mode, content):
+    """Install configuration for both current and historical ConfigFactory APIs."""
+    explicit_path = output / f'{mode}.properties'
+    explicit_path.write_text(content)
+
+    # Older Pixels binaries do not understand PIXELS_PROPERTIES_PATH and only
+    # read $PIXELS_HOME/cpp/etc/pixels-cpp.properties.  Give every mode its own
+    # legacy home so randomized runs still select exactly the intended config.
+    legacy_home = output / 'config-homes' / mode
+    legacy_path = legacy_home / 'cpp/etc/pixels-cpp.properties'
+    legacy_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_path.write_text(content)
+    return explicit_path, legacy_home
 
 
 def run(command, env, sql, prefix, timeout):
@@ -196,9 +217,14 @@ def main():
     p.add_argument('--perf', action='store_true', help='separate full-process stat + record after timed repetitions')
     p.add_argument('--flamegraph-dir', type=Path)
     p.add_argument('--timeout', type=int, default=600)
-    p.add_argument('--output', type=nonempty_path, required=True, help='new output, or existing output with --resume')
+    p.add_argument('--buffer-hugepages', choices=('config', 'on', 'off'), default='config',
+                   help='override pixel.bufferpool.hugepage in generated mode configs')
+    p.add_argument('--output', type=nonempty_path, required=True, help='new output, or existing output with --resume/--overwrite')
     p.add_argument('--resume', action='store_true', help='resume a compatible existing output directory')
+    p.add_argument('--overwrite', action='store_true', help='delete an existing output directory before starting')
     args = p.parse_args()
+    if args.resume and args.overwrite:
+        p.error('--resume and --overwrite are mutually exclusive')
     if min(args.ssds, args.threads, args.repeat, args.timeout) < 1 or args.ssds > 16 or args.files_per_ssd < 0:
         p.error('require 1..16 SSDs, positive threads/repeat/timeout and nonnegative file limit')
     if any(m not in SUPPORTED_MODES for m in args.modes):
@@ -256,6 +282,12 @@ def main():
         })
         manifest_path.write_text(json.dumps(manifest, indent=2))
     else:
+        if args.output.exists():
+            if not args.overwrite:
+                p.error(f'output already exists: {args.output}; use --resume or --overwrite')
+            if not args.output.is_dir():
+                p.error(f'output exists but is not a directory: {args.output}')
+            shutil.rmtree(args.output)
         args.output.mkdir(parents=True, exist_ok=False)
         manifest_path.write_text(json.dumps({
             'args': {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
@@ -265,10 +297,14 @@ def main():
         }, indent=2))
     quoted = ','.join("'" + f.replace("'", "''") + "'" for f in files)
     setup = f"SET threads={args.threads};\nCREATE VIEW hits AS SELECT * FROM pixels_scan([{quoted}]);\n"
-    env = dict(os.environ, PIXELS_SRC=str(ROOT.parent), PIXELS_HOME=str(args.output))
+    env = dict(os.environ, PIXELS_SRC=str(ROOT.parent))
     env.pop('PIXELS_PERF_READY_FILE', None)
+    mode_configs = {}
+    mode_homes = {}
     for mode in args.modes:
-        (args.output / f'{mode}.properties').write_text(properties(source, mode, args.threads, args.column_sizes.resolve()))
+        mode_configs[mode], mode_homes[mode] = install_mode_properties(
+            args.output, mode, properties(source, mode, args.threads,
+                                          args.column_sizes.resolve(), args.buffer_hugepages))
     rng = random.Random(20260909)
     baseline = {}
     done = repair_resume_summary(summary_path, args.output, args.perf) if args.resume else set()
@@ -287,7 +323,11 @@ def main():
                         print(f'[skip] {case.name}', flush=True)
                         continue
                     case.mkdir(exist_ok=args.resume)
-                    env['PROPERTIES_PATH'] = str(args.output / f'{mode}.properties')
+                    # Current ConfigFactory uses PIXELS_PROPERTIES_PATH. Older
+                    # builds ignore it and use PIXELS_HOME/cpp/etc instead.
+                    env['PIXELS_PROPERTIES_PATH'] = str(mode_configs[mode])
+                    env['PIXELS_HOME'] = str(mode_homes[mode])
+                    env.pop('PROPERTIES_PATH', None)
                     env['PIXELS_SELECTIVE_METRICS_PREFIX'] = str(case / 'selective-timed')
                     result = case / 'result.csv'
                     statement = f"COPY ({content}) TO '{str(result).replace(chr(39), chr(39)*2)}' (FORMAT CSV, HEADER);" if args.smoke else f'EXPLAIN ANALYZE {content};'

@@ -354,7 +354,7 @@ TypeDescription::createRowBatch(int maxSize, const std::vector<bool> &useEncoded
 }
 
 
-std::vector <std::shared_ptr<TypeDescription>> TypeDescription::getChildren()
+const std::vector<std::shared_ptr<TypeDescription>> &TypeDescription::getChildren() const
 {
     return children;
 }
@@ -763,7 +763,7 @@ TypeDescription TypeDescription::withMaxLength(int maxLength)
 
 std::vector<flatbuffers::Offset<pixels::fb::Type>> TypeDescription::writeTypes(flatbuffers::FlatBufferBuilder& fbb)
 {
-    std::vector<std::shared_ptr<TypeDescription>> children = this->getChildren();
+    const auto &children = this->getChildren();
     std::vector<std::string> names = this->getFieldNames();
     std::vector<flatbuffers::Offset<pixels::fb::Type>> typeVector;
 

@@ -12,7 +12,27 @@
 #include "gtest/gtest.h"
 #include "physical/DynamicBufferPool.h"
 
+#include <cstdio>
 #include <cstring>
+#include <unistd.h>
+
+TEST(DirectIoLibTest, ReadViewRetainsBackingBuffer)
+{
+    FILE *file = std::tmpfile();
+    ASSERT_NE(file, nullptr);
+    ASSERT_EQ(ftruncate(fileno(file), 4096), 0);
+
+    DirectIoLib directIo(4096);
+    auto owner = std::make_shared<ByteBuffer>(4096);
+    std::weak_ptr<ByteBuffer> lifetime = owner;
+    auto view = directIo.read(fileno(file), 0, owner, 64);
+    owner.reset();
+
+    EXPECT_FALSE(lifetime.expired());
+    view.reset();
+    EXPECT_TRUE(lifetime.expired());
+    std::fclose(file);
+}
 
 class DynamicBufferPoolTest : public testing::Test
 {
@@ -79,6 +99,23 @@ TEST_F(DynamicBufferPoolTest, GrowsBufferAndPreservesData)
     {
         ASSERT_EQ(bytes[i], 0x5a);
     }
+}
+
+TEST_F(DynamicBufferPoolTest, CapacitySnapshotUsesLogicalColumnIdsAcrossBothBuffers)
+{
+    // The reader encodes a logical column and its double-buffer parity in the
+    // key.  The scheduler must see the same logical key in both capacity maps.
+    DynamicBufferPool::AllocateBuffer(6 * 2 + 1, 4096);
+    DynamicBufferPool::Switch();
+    DynamicBufferPool::AllocateBuffer(6 * 2 + 1, 8192);
+
+    auto capacities = DynamicBufferPool::GetCapacities();
+    ASSERT_EQ(capacities[0].count(6), 1);
+    ASSERT_EQ(capacities[1].count(6), 1);
+    EXPECT_GE(capacities[0].at(6), 4096);
+    EXPECT_GE(capacities[1].at(6), 8192);
+    EXPECT_EQ(capacities[0].count(12), 0);
+    EXPECT_EQ(capacities[1].count(13), 0);
 }
 
 TEST_F(DynamicBufferPoolTest, RejectsDuplicateColumnsAndExhaustedSlots)

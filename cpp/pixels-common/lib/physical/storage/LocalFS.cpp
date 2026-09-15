@@ -33,16 +33,12 @@
 #endif
 #include "physical/GlobalStaticBufferPool.h"
 #include "physical/BufferPoolMode.h"
+#include "physical/ThreadContext.h"
 #include "physical/FilePath.h"
 #include "utils/ConfigFactory.h"
 #include <filesystem>
 
 namespace fs = std::filesystem;
-
-namespace
-{
-thread_local int staticBufferThreadId = -1;
-}
 
 std::string LocalFS::SchemePrefix = "file://";
 
@@ -107,11 +103,15 @@ std::shared_ptr <PixelsRandomAccessFile> LocalFS::openRaf(const std::string &pat
             int threads = std::stoi(config.getProperty("pixel.static.buffer.threads", "4"));
             pool.Initialize(sizePath, blockSize, threads);
         }
-        if (staticBufferThreadId < 0)
+        if (pixels::ThreadContext::HasContext())
         {
-            staticBufferThreadId = pool.AcquireThreadId();
+            return std::make_shared<DirectUringRandomAccessFileStatic>(
+                path, pixels::ThreadContext::GetRing());
         }
-        return std::make_shared<DirectUringRandomAccessFileStatic>(path, pool.GetRing(staticBufferThreadId));
+        // Bind-time metadata reads run before a scan worker owns a static-pool
+        // context. They do not issue fixed-buffer scan reads, so use the
+        // ordinary reader and leave all static thread IDs for scan workers.
+        return std::make_shared<DirectUringRandomAccessFile>(path);
     }
     return std::make_shared<DirectUringRandomAccessFile>(path);
 }

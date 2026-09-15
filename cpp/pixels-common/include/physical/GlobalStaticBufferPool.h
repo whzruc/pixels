@@ -26,6 +26,8 @@
 class GlobalStaticBufferPool
 {
    public:
+    static constexpr int RINGS_PER_THREAD = 2;
+
     static GlobalStaticBufferPool &Instance();
 
     void Initialize(const std::string &columnSizePath, int blockSize, int maxThreads);
@@ -33,6 +35,8 @@ class GlobalStaticBufferPool
     int AcquireThreadId();
 
     struct io_uring *GetRing(int threadId);
+
+    struct io_uring *GetRing(int threadId, int ringSlot);
 
     std::shared_ptr<ByteBuffer> GetBuffer(const std::string &columnName, int threadId, int bufferId);
 
@@ -55,7 +59,7 @@ class GlobalStaticBufferPool
     std::map<std::string, std::vector<std::vector<std::shared_ptr<ByteBuffer>>>> buffers;
     std::map<std::string, int> columnIndexes;
     std::vector<std::string> columnNames;
-    std::vector<struct io_uring *> rings;
+    std::vector<std::vector<struct io_uring *>> rings;
     std::shared_ptr<DirectIoLib> directIoLib;
     std::atomic<int> nextThreadId{0};
     int maxThreads = 0;

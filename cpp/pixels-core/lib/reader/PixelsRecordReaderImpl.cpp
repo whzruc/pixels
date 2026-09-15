@@ -135,7 +135,7 @@ void PixelsRecordReaderImpl::checkBeforeRead()
     }
 
     // create column readers
-    auto columnSchemas = fileSchema->getChildren();
+    const auto &columnSchemas = fileSchema->getChildren();
     readers.clear();
     readers.resize(resultColumns.size());
     for (int i = 0; i < resultColumns.size(); i++)

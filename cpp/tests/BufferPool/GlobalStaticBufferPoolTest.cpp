@@ -35,6 +35,8 @@ TEST(GlobalStaticBufferPoolTest, AllocatesRegisteredDoubleBuffers)
 
     EXPECT_EQ(threadId, 0);
     EXPECT_NE(pool.GetRing(threadId), nullptr);
+    EXPECT_NE(pool.GetRing(threadId, 1), nullptr);
+    EXPECT_NE(pool.GetRing(threadId, 0), pool.GetRing(threadId, 1));
     EXPECT_GE(pool.GetBuffer("first", threadId, 0)->size(), 4096);
     EXPECT_NE(pool.GetBuffer("first", threadId, 0), pool.GetBuffer("first", threadId, 1));
     EXPECT_NE(pool.GetBufferIndex("first", 0), pool.GetBufferIndex("first", 1));

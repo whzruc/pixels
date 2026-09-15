@@ -191,7 +191,13 @@ pixels::SelectiveBufferScheduler::Capacity DynamicBufferPool::GetCapacities() {
     for (int idx = 0; idx < 2; ++idx) {
         for (const auto &entry : colToSlot[idx]) {
             const auto &buffer = bufferSlots[idx][entry.second];
-            if (buffer) result[idx][entry.first] = buffer->size();
+            // read() addresses a parity-specific buffer with
+            //   bufferKey = columnId * 2 + parity.
+            // Selective scheduling compares one file demand against both
+            // parity sets, so its capacity snapshot must use the logical
+            // column id.  Publishing bufferKey here makes every demand look
+            // like a missing column and disables all task transfers.
+            if (buffer) result[idx][entry.first / 2] = buffer->size();
         }
     }
     return result;
