@@ -23,6 +23,7 @@
  * @create 2023-03-07
  */
 #include "vector/ColumnVector.h"
+#include "utils/AlignedMemory.h"
 #include <cmath>
 
 ColumnVector::ColumnVector(uint64_t len, bool encoding)
@@ -35,7 +36,8 @@ ColumnVector::ColumnVector(uint64_t len, bool encoding)
     closed = false;
     isNull = new uint8_t[length]();
     noNulls = true;
-    posix_memalign(reinterpret_cast<void **>(&isValid), 64, ceil(1.0 * len / 64) * sizeof(uint64_t));
+    pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&isValid), 64,
+                                    ceil(1.0 * len / 64) * sizeof(uint64_t));
 }
 
 ColumnVector::~ColumnVector()
@@ -51,7 +53,7 @@ void ColumnVector::close()
         // TODO: reset other variables
         if (isValid != nullptr)
         {
-            free(isValid);
+            pixels::memory::AlignedFree(isValid);
             isValid = nullptr;
         }
         if (isNull != nullptr)
@@ -162,5 +164,4 @@ void ColumnVector::add(int value)
 {
     throw std::runtime_error("Adding int is not supported");
 }
-
 

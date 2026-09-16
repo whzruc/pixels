@@ -23,6 +23,7 @@
  * @create 2023-04-19
  */
 #include "physical/natives/DirectIoLib.h"
+#include "utils/AlignedMemory.h"
 #include <sys/mman.h>  // mmap, munmap, madvise
 #include <new>
 #include <cstring>
@@ -130,7 +131,7 @@ std::shared_ptr<ByteBuffer> DirectIoLib::allocateDirectBuffer(long size, bool is
         uint8_t* directBufferPointer;
 
         // Allocate aligned memory using posix_memalign
-        if (posix_memalign((void**)&directBufferPointer, fsBlockSize, toAllocate) != 0)
+        if (pixels::memory::AlignedAllocate((void**)&directBufferPointer, fsBlockSize, toAllocate) != 0)
         {
             throw std::runtime_error("Normal memory allocation failed: " + std::string(strerror(errno)));
         }
@@ -140,7 +141,7 @@ std::shared_ptr<ByteBuffer> DirectIoLib::allocateDirectBuffer(long size, bool is
         {
             if (buf && buf->getBuffer())
             {
-                free(const_cast<uint8_t*>(buf->getBuffer()));
+                pixels::memory::AlignedFree(const_cast<uint8_t*>(buf->getBuffer()));
             }
             // delete buf;
         };

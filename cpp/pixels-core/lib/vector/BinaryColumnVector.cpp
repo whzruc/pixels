@@ -23,13 +23,14 @@
  * @create 2023-03-17
  */
 #include "vector/BinaryColumnVector.h"
+#include "utils/AlignedMemory.h"
 #include <cstdint>
 #include <cstring>
 
 BinaryColumnVector::BinaryColumnVector(uint64_t len, bool encoding) : ColumnVector(len, encoding)
 {
-  posix_memalign(reinterpret_cast<void **>(&vector), 32,
-                 len * sizeof(pixels::string_t));
+  pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&vector), 32,
+                                  len * sizeof(pixels::string_t));
   // Reader setRef() only stores non-owning descriptors. Allocate the
   // writer-only string container lazily in setVal().
   memoryUsage += (long) sizeof(uint8_t) * len;
@@ -40,7 +41,7 @@ void BinaryColumnVector::close()
   if (!closed)
   {
     ColumnVector::close();
-    free(vector);
+    pixels::memory::AlignedFree(vector);
     vector = nullptr;
   }
 }
@@ -117,14 +118,14 @@ void BinaryColumnVector::ensureSize(uint64_t size, bool preserveData)
   if (length < size)
   {
     pixels::string_t *oldVector = vector;
-    posix_memalign(reinterpret_cast<void **>(&vector), 32,
-                   size * sizeof(pixels::string_t));
+    pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&vector), 32,
+                                    size * sizeof(pixels::string_t));
     str_vec.resize(size);
     if (preserveData)
     {
       std::copy(oldVector, oldVector + length, vector);
     }
-    free(oldVector);
+    pixels::memory::AlignedFree(oldVector);
     memoryUsage += (long) sizeof(pixels::string_t) * (size - length);
     resize(size);
   }

@@ -67,3 +67,14 @@ target_include_directories(SelectiveBufferSchedulerTest PRIVATE
 target_compile_options(SelectiveBufferSchedulerTest PRIVATE -UNDEBUG)
 target_link_libraries(SelectiveBufferSchedulerTest PRIVATE pthread)
 add_test(NAME SelectiveBufferSchedulerTest COMMAND SelectiveBufferSchedulerTest)
+
+# Validate the allocator bridge without requiring a full DuckDB process. Test
+# doubles use the same prefixed symbols exported by DuckDB's jemalloc build.
+add_executable(AlignedMemoryTest AlignedMemoryTest.cpp)
+target_compile_definitions(AlignedMemoryTest PRIVATE PIXELS_USE_DUCKDB_JEMALLOC)
+target_include_directories(AlignedMemoryTest PRIVATE
+        ${GTEST_DIR}/googletest/include
+        ${PROJECT_SOURCE_DIR}/pixels-common/include
+)
+target_link_libraries(AlignedMemoryTest PRIVATE gtest_main)
+add_test(NAME AlignedMemoryTest COMMAND AlignedMemoryTest)

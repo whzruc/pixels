@@ -32,6 +32,7 @@
  */
 
 #include "ParquetPixelsScan.hpp"
+#include "utils/AlignedMemory.h"
 #include "ArrowRandomAccessFile.hpp"
 #include "profiler/TimeProfiler.h"
 #include "utils/ConfigFactory.h"
@@ -129,7 +130,10 @@ ParquetPixelsLocalState::~ParquetPixelsLocalState() {
     // Free self-managed column buffers
     for (int bi = 0; bi < 2; bi++)
         for (int ci = 0; ci < n_cols; ci++)
-            if (raw_data[bi][ci]) { free(raw_data[bi][ci]); raw_data[bi][ci] = nullptr; }
+            if (raw_data[bi][ci]) {
+                pixels::memory::AlignedFree(raw_data[bi][ci]);
+                raw_data[bi][ci] = nullptr;
+            }
 }
 
 // ============================================================================
@@ -692,7 +696,7 @@ ParquetPixelsScanFunction::InitLocal(ExecutionContext& exec_ctx,
             lstate->raw_sizes[rank] = sz;
             for (int bi = 0; bi < 2; bi++) {
                 void* p = nullptr;
-                if (posix_memalign(&p, block, sz) != 0)
+                if (pixels::memory::AlignedAllocate(&p, block, sz) != 0)
                     throw IOException("read_parquet_uring: posix_memalign failed for col %d", col_id);
                 lstate->raw_data[bi][rank] = static_cast<uint8_t*>(p);
             }

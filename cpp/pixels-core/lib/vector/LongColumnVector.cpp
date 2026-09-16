@@ -23,6 +23,7 @@
  * @create 2023-03-17
  */
 #include "vector/LongColumnVector.h"
+#include "utils/AlignedMemory.h"
 #include <algorithm>
 #include <cstdlib>
 #include <new>
@@ -30,8 +31,8 @@
 LongColumnVector::LongColumnVector(uint64_t len, bool encoding, bool isLong)
         : ColumnVector (len, encoding)
 {
-    posix_memalign (reinterpret_cast<void **>(&longVector), 32,
-                    len * sizeof (int64_t));
+    pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&longVector), 32,
+                                    len * sizeof(int64_t));
 
     memoryUsage += (long) sizeof (long) * len;
 }
@@ -43,7 +44,7 @@ void LongColumnVector::close()
         ColumnVector::close ();
         if (encoding && longVector != nullptr)
         {
-            free (longVector);
+            pixels::memory::AlignedFree(longVector);
         }
         longVector = nullptr;
     }
@@ -82,7 +83,7 @@ void LongColumnVector::setExternalData(long *data)
 {
     if (ownsData && longVector != nullptr)
     {
-        free(longVector);
+        pixels::memory::AlignedFree(longVector);
     }
     longVector = data;
     ownsData = false;
@@ -94,8 +95,8 @@ void LongColumnVector::ensureOwnedData()
     {
         return;
     }
-    posix_memalign(reinterpret_cast<void **>(&longVector), 32,
-                   length * sizeof(int64_t));
+    pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&longVector), 32,
+                                    length * sizeof(int64_t));
     if (longVector == nullptr)
     {
         throw std::bad_alloc();
@@ -152,13 +153,13 @@ void LongColumnVector::ensureSize(uint64_t size, bool preserveData)
     {
 
         long *oldVector = longVector;
-        posix_memalign (reinterpret_cast<void **>(&longVector), 32,
-                        size * sizeof (int64_t));
+        pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&longVector), 32,
+                                        size * sizeof(int64_t));
         if (preserveData)
         {
             std::copy (oldVector, oldVector + length, longVector);
         }
-        delete[] oldVector;
+        pixels::memory::AlignedFree(oldVector);
         memoryUsage += (long) sizeof (long) * (size - length);
         resize (size);
     }

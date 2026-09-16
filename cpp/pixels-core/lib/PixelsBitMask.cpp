@@ -23,13 +23,14 @@
  * @create 2023-07-06
  */
 #include "PixelsBitMask.h"
+#include "utils/AlignedMemory.h"
 #include <math.h>
 
 PixelsBitMask::PixelsBitMask(long length)
 {
     this->maskLength = length;
     this->arrayLength = std::ceil(1.0 * length / 8);
-    posix_memalign(reinterpret_cast<void **>(&mask), 4096, arrayLength);
+    pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&mask), 4096, arrayLength);
     memset(mask, 255, arrayLength);
 }
 
@@ -37,13 +38,13 @@ PixelsBitMask::PixelsBitMask(PixelsBitMask &other)
 {
     maskLength = other.maskLength;
     arrayLength = other.arrayLength;
-    posix_memalign(reinterpret_cast<void **>(&mask), 4096, arrayLength);
+    pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&mask), 4096, arrayLength);
     memcpy(mask, other.mask, arrayLength);
 }
 
 PixelsBitMask::~PixelsBitMask()
 {
-    free(mask);
+    pixels::memory::AlignedFree(mask);
     mask = nullptr;
 }
 
@@ -134,4 +135,3 @@ void PixelsBitMask::setByteAligned(long index, uint8_t value)
 {
     mask[index / 8] &= value;  
 }
-
