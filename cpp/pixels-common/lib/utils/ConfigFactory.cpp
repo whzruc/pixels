@@ -53,8 +53,16 @@ ConfigFactory::ConfigFactory()
     {
         pixelsHome += "/";
     }
-    std::ifstream infile(pixelsHome + "cpp/etc/pixels-cpp.properties");
-    std::cout << "pixels properties file is " << pixelsHome + "cpp/etc/pixels-cpp.properties" << std::endl;
+    // Keep the historical PIXELS_HOME-based lookup as the default, but allow
+    // benchmark runners (and other isolated processes) to provide an explicit
+    // per-process properties file without changing PIXELS_HOME.
+    std::string propertiesPath = pixelsHome + "cpp/etc/pixels-cpp.properties";
+    if (std::getenv("PIXELS_PROPERTIES_PATH") != nullptr)
+    {
+        propertiesPath = std::string(std::getenv("PIXELS_PROPERTIES_PATH"));
+    }
+    std::ifstream infile(propertiesPath);
+    std::cout << "pixels properties file is " << propertiesPath << std::endl;
     std::string line;
     while (std::getline(infile, line))
     {

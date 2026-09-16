@@ -32,6 +32,8 @@
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include "PixelsReader.h"
 #include "reader/PixelsRecordReader.h"
+#include "physical/SelectiveBufferScheduler.h"
+#include "liburing.h"
 
 namespace duckdb
 {
@@ -50,6 +52,11 @@ namespace duckdb
             vectorizedRowBatch = nullptr;
             currReader = nullptr;
             nextReader = nullptr;
+            ring = nullptr;
+            prefetchRing = nullptr;
+            threadId = -1;
+            cfgDoubleBuffer = false;
+            cfgDynamicBuffer = false;
         }
 
         std::shared_ptr <PixelsRecordReader> currPixelsRecordReader;
@@ -68,6 +75,14 @@ namespace duckdb
         idx_t next_batch_index;
         std::string next_file_name;
         std::string curr_file_name;
+        struct io_uring *ring;
+        struct io_uring *prefetchRing;
+        int threadId;
+        bool cfgDoubleBuffer;
+        bool cfgDynamicBuffer;
+        bool cfgSelective = false;
+        size_t selectiveWorker = 0;
+        pixels::SelectiveBufferScheduler::Task selectiveTask{};
     };
 
 }

@@ -1,4 +1,4 @@
-.PHONY: all clean debug release relWithDebInfo pull update
+.PHONY: all clean debug release jemalloc spdk relWithDebInfo pull update
 
 all: release
 
@@ -40,17 +40,30 @@ update:
 clean:
 	rm -rf build/release
 	rm -rf build/debug
+	rm -rf build/jemalloc-release
 	cd pixels-duckdb/duckdb && make clean
 
 # Main build
 debug:
-	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Debug ${BUILD_FLAGS} -S pixels-duckdb/duckdb -B build/debug && \
+	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DOVERRIDE_NEW_DELETE=FALSE -DPIXELS_USE_DUCKDB_JEMALLOC=OFF -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Debug ${BUILD_FLAGS} -S pixels-duckdb/duckdb -B build/debug && \
 	cmake --build build/debug --config Debug
 
 release:
-	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Release ${BUILD_FLAGS} -S pixels-duckdb/duckdb -B build/release && \
+	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DOVERRIDE_NEW_DELETE=FALSE -DPIXELS_USE_DUCKDB_JEMALLOC=OFF -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Release ${BUILD_FLAGS} -S pixels-duckdb/duckdb -B build/release && \
 	cmake --build build/release --config Release
 
+# Unified allocator build: DuckDB, global C++ new/delete, and Pixels aligned
+# allocations all use DuckDB's statically linked, prefixed jemalloc instance.
+jemalloc:
+	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DOVERRIDE_NEW_DELETE=TRUE -DPIXELS_USE_DUCKDB_JEMALLOC=ON -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Release ${BUILD_FLAGS} -S pixels-duckdb/duckdb -B build/jemalloc-release && \
+	cmake --build build/jemalloc-release --config Release
+
+# SPDK build. Keep a separate build tree because the SPDK backend changes
+# dependency discovery and links against SPDK/DPDK libraries.
+spdk:
+	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DPIXELS_ENABLE_SPDK=ON -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=Release ${BUILD_FLAGS} -S pixels-duckdb/duckdb -B build/spdk-release && \
+	cmake --build build/spdk-release --config Release
+
 relWithDebInfo:
-	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=RelWithDebInfo ${BUILD_FLAGS} -S pixels-duckdb/duckdb -B build/relWithDebInfo && \
+	cmake $(GENERATOR) $(FORCE_COLOR) $(EXTENSION_FLAGS) ${CLIENT_FLAGS} -DOVERRIDE_NEW_DELETE=FALSE -DPIXELS_USE_DUCKDB_JEMALLOC=OFF -DEXTENSION_STATIC_BUILD=1 -DCMAKE_BUILD_TYPE=RelWithDebInfo ${BUILD_FLAGS} -S pixels-duckdb/duckdb -B build/relWithDebInfo && \
 	cmake --build build/relWithDebInfo --config RelWithDebInfo

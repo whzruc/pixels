@@ -158,7 +158,7 @@ public:
 
     static std::shared_ptr <TypeDescription> fromString(const std::string &typeName);
 
-    std::vector <std::shared_ptr<TypeDescription>> getChildren();
+    const std::vector <std::shared_ptr<TypeDescription>> &getChildren() const;
 
     Category getCategory() const;
 

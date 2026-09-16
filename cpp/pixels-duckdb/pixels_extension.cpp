@@ -33,6 +33,7 @@
 #include "duckdb/common/optional_ptr.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/function/scalar_function.hpp"
+#include "utils/AlignedMemory.h"
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
 namespace duckdb {
@@ -63,6 +64,10 @@ PixelsScanReplacement(ClientContext &context, ReplacementScanInput &input,
 }
 
 void PixelsExtension::Load(ExtensionLoader &loader) {
+  if (pixels::memory::UsesDuckDBJemalloc()) {
+    std::cout << "Pixels Extension: aligned allocations use DuckDB jemalloc"
+              << std::endl;
+  }
   auto &db_instance = loader.GetDatabaseInstance();
   Connection con(db_instance);
   con.BeginTransaction();

@@ -25,30 +25,34 @@
 #include "physical/DynamicBufferPool.h"
 #include "physical/BufferPoolStats.h"
 #include "utils/ConfigFactory.h"
-#include <cerrno>
 #include <cstring>
 
-thread_local struct io_uring *DynamicBufferPool::ring = nullptr;
-thread_local struct iovec *DynamicBufferPool::iovecs = nullptr;
+// Thread-local static member initialization
+thread_local struct io_uring* DynamicBufferPool::ring = nullptr;
+thread_local struct iovec* DynamicBufferPool::iovecs = nullptr;
 thread_local uint32_t DynamicBufferPool::maxBufferSlots = 0;
 thread_local uint32_t DynamicBufferPool::currentUsedSlots = 0;
 thread_local bool DynamicBufferPool::isInitialized = false;
-thread_local std::vector<std::shared_ptr<ByteBuffer>> DynamicBufferPool::bufferSlots;
-thread_local std::queue<uint32_t> DynamicBufferPool::freeSlots;
-thread_local std::map<uint32_t, uint32_t> DynamicBufferPool::colToSlot;
-thread_local std::map<uint32_t, uint32_t> DynamicBufferPool::slotToCol;
-thread_local std::shared_ptr<DirectIoLib> DynamicBufferPool::directIoLib = nullptr;
-thread_local std::shared_ptr<ByteBuffer> DynamicBufferPool::placeholderBuffer = nullptr;
 
-void DynamicBufferPool::Initialize(struct io_uring *uringRing, uint32_t maxSlots)
-{
-    if (isInitialized)
-    {
+// Double buffer support - initialize currBufferIdx to 1, will be 0 after first Switch
+thread_local int DynamicBufferPool::currBufferIdx = 1;
+thread_local int DynamicBufferPool::nextBufferIdx = 0;
+thread_local int DynamicBufferPool::colCount = 0;
+
+// Double buffer arrays
+thread_local std::vector<std::shared_ptr<ByteBuffer>> DynamicBufferPool::bufferSlots[2];
+thread_local std::queue<uint32_t> DynamicBufferPool::freeSlots[2];
+thread_local std::map<uint32_t, uint32_t> DynamicBufferPool::colToSlot[2];
+thread_local std::map<uint32_t, uint32_t> DynamicBufferPool::slotToCol[2];
+thread_local uint32_t DynamicBufferPool::currentUsedSlots_arr[2] = {0, 0};
+thread_local std::shared_ptr<DirectIoLib> DynamicBufferPool::directIoLib = nullptr;
+
+void DynamicBufferPool::Initialize(struct io_uring* uringRing, uint32_t maxSlots) {
+    if (isInitialized) {
         return;
     }
 
-    if (uringRing == nullptr)
-    {
+    if (uringRing == nullptr) {
         throw InvalidArgumentException("DynamicBufferPool::Initialize: io_uring ring cannot be null");
     }
 
@@ -56,301 +60,358 @@ void DynamicBufferPool::Initialize(struct io_uring *uringRing, uint32_t maxSlots
     maxBufferSlots = maxSlots;
     currentUsedSlots = 0;
 
-    if (maxSlots == 0)
-    {
-        throw InvalidArgumentException("DynamicBufferPool::Initialize: max slots must be positive");
-    }
+    // Set buffer indexes: currBufferIdx starts at 0, nextBufferIdx at 1
+    currBufferIdx = 0;
+    nextBufferIdx = 1;
+    colCount = 0;
 
-    int fsBlockSize = std::stoi(ConfigFactory::Instance().getProperty("localfs.block.size", "4096"));
+    // Initialize DirectIoLib for aligned buffer allocation
+    int fsBlockSize = 4096; // Default value
+    try {
+        fsBlockSize = std::stoi(ConfigFactory::Instance().getProperty("localfs.block.size"));
+    } catch (...) {
+        // Use default if config not available
+    }
     directIoLib = std::make_shared<DirectIoLib>(fsBlockSize);
 
-    iovecs = static_cast<struct iovec *>(calloc(maxSlots, sizeof(struct iovec)));
-    if (iovecs == nullptr)
-    {
+    // Allocate iovec array for all slots
+    iovecs = (struct iovec*)calloc(maxSlots, sizeof(struct iovec));
+    if (iovecs == nullptr) {
         throw InvalidArgumentException("DynamicBufferPool::Initialize: failed to allocate iovecs");
     }
 
-    for (uint32_t i = 0; i < maxSlots; i++)
-    {
+    // Initialize all iovecs to null (sparse registration)
+    for (uint32_t i = 0; i < maxSlots; i++) {
         iovecs[i].iov_base = nullptr;
         iovecs[i].iov_len = 0;
     }
 
-    bufferSlots.resize(maxSlots, nullptr);
-    for (uint32_t i = 0; i < maxSlots; i++)
-    {
-        freeSlots.push(i);
+    // Initialize both buffer sets with separate slot ranges
+    // Buffer set 0: uses slots 0 to (maxSlots/2 - 1)
+    // Buffer set 1: uses slots maxSlots/2 to (maxSlots - 1)
+    uint32_t slotsPerSet = maxSlots / 2;
+
+    for (int idx = 0; idx < 2; idx++) {
+        bufferSlots[idx].resize(maxSlots, nullptr);
+
+        // Initialize free slots for each buffer set with its own range
+        uint32_t slotStart = idx * slotsPerSet;
+        uint32_t slotEnd = slotStart + slotsPerSet;
+
+        for (uint32_t i = slotStart; i < slotEnd; i++) {
+            freeSlots[idx].push(i);
+        }
+        currentUsedSlots_arr[idx] = 0;
     }
 
-    int ret = io_uring_register_buffers_sparse(ring, maxSlots);
-    if (ret == -EINVAL || ret == -EOPNOTSUPP)
-    {
-        placeholderBuffer = directIoLib->allocateDirectBuffer(fsBlockSize, false);
-        for (uint32_t i = 0; i < maxSlots; i++)
-        {
-            iovecs[i].iov_base = placeholderBuffer->getPointer();
-            iovecs[i].iov_len = placeholderBuffer->size();
-        }
-        ret = io_uring_register_buffers(ring, iovecs, maxSlots);
-    }
-    if (ret != 0)
-    {
+    // Register buffers using sparse registration
+    // Note: io_uring_register_buffers with all null entries creates sparse registration
+    int ret = io_uring_register_buffers(ring, iovecs, maxSlots);
+    if (ret != 0) {
         free(iovecs);
         iovecs = nullptr;
-        throw InvalidArgumentException("DynamicBufferPool::Initialize: failed to register sparse buffers, error: " +
-                                       std::to_string(ret));
+        throw InvalidArgumentException(
+            "DynamicBufferPool::Initialize: failed to register buffers (sparse), error: " +
+            std::to_string(ret)
+        );
     }
 
     isInitialized = true;
 }
 
-std::shared_ptr<ByteBuffer> DynamicBufferPool::AllocateBuffer(uint32_t colId, uint64_t size)
-{
-    if (!isInitialized)
-    {
+std::shared_ptr<ByteBuffer> DynamicBufferPool::AllocateBuffer(uint32_t colId, uint64_t size) {
+    if (!isInitialized) {
         throw InvalidArgumentException("DynamicBufferPool::AllocateBuffer: pool not initialized");
     }
 
-    if (colToSlot.find(colId) != colToSlot.end())
-    {
-        throw InvalidArgumentException("DynamicBufferPool::AllocateBuffer: buffer already exists for colId " +
-                                       std::to_string(colId));
+    // Check if buffer already exists for this colId in current buffer set
+    if (colToSlot[currBufferIdx].find(colId) != colToSlot[currBufferIdx].end()) {
+        throw InvalidArgumentException(
+            "DynamicBufferPool::AllocateBuffer: buffer already exists for colId " +
+            std::to_string(colId)
+        );
     }
 
+    // Allocate a free slot from current buffer set
     int slotIndex = AllocateSlot();
-    if (slotIndex < 0)
-    {
+    if (slotIndex < 0) {
         throw InvalidArgumentException("DynamicBufferPool::AllocateBuffer: no free slots available");
     }
 
     auto buffer = directIoLib->allocateDirectBuffer(size, false);
-    if (buffer == nullptr)
-    {
+    if (buffer == nullptr) {
         FreeSlot(slotIndex);
         throw InvalidArgumentException("DynamicBufferPool::AllocateBuffer: failed to allocate buffer");
     }
-
     memset(buffer->getPointer(), 0, buffer->size());
-    bufferSlots[slotIndex] = buffer;
-    colToSlot[colId] = slotIndex;
-    slotToCol[slotIndex] = colId;
-    if (!UpdateBufferRegistration(slotIndex, buffer))
-    {
-        bufferSlots[slotIndex] = nullptr;
-        colToSlot.erase(colId);
-        slotToCol.erase(slotIndex);
+
+    // Store buffer in current buffer set slot
+    bufferSlots[currBufferIdx][slotIndex] = buffer;
+
+    // Update mappings for current buffer set
+    colToSlot[currBufferIdx][colId] = slotIndex;
+    slotToCol[currBufferIdx][slotIndex] = colId;
+
+    // Track column count
+    if (colId >= static_cast<uint32_t>(colCount)) {
+        colCount = colId + 1;
+    }
+
+    // Update io_uring buffer registration
+    if (!UpdateBufferRegistration(slotIndex, buffer)) {
+        // Rollback on failure
+        bufferSlots[currBufferIdx][slotIndex] = nullptr;
+        colToSlot[currBufferIdx].erase(colId);
+        slotToCol[currBufferIdx].erase(slotIndex);
         FreeSlot(slotIndex);
         throw InvalidArgumentException("DynamicBufferPool::AllocateBuffer: failed to update buffer registration");
     }
 
-    currentUsedSlots++;
+    currentUsedSlots_arr[currBufferIdx]++;
+    currentUsedSlots = currentUsedSlots_arr[currBufferIdx];
     BufferPoolStats::Instance().RecordAllocation(BufferPoolStatsMode::Dynamic, buffer->size());
-    BufferPoolStats::Instance().RecordRegistrationUpdate(BufferPoolStatsMode::Dynamic, 0, buffer->size());
+    BufferPoolStats::Instance().RecordRegistrationUpdate(
+        BufferPoolStatsMode::Dynamic, 0, buffer->size());
 
     return buffer;
 }
 
-std::shared_ptr<ByteBuffer> DynamicBufferPool::GetBuffer(uint32_t colId)
-{
-    auto it = colToSlot.find(colId);
-    if (it == colToSlot.end())
-    {
+std::shared_ptr<ByteBuffer> DynamicBufferPool::GetBuffer(uint32_t colId) {
+    auto it = colToSlot[currBufferIdx].find(colId);
+    if (it == colToSlot[currBufferIdx].end()) {
         return nullptr;
     }
 
     uint32_t slotIndex = it->second;
-    return bufferSlots[slotIndex];
+    return bufferSlots[currBufferIdx][slotIndex];
 }
 
-int DynamicBufferPool::GetBufferSlotIndex(uint32_t colId)
-{
-    auto it = colToSlot.find(colId);
-    if (it == colToSlot.end())
-    {
+pixels::SelectiveBufferScheduler::Capacity DynamicBufferPool::GetCapacities() {
+    pixels::SelectiveBufferScheduler::Capacity result;
+    for (int idx = 0; idx < 2; ++idx) {
+        for (const auto &entry : colToSlot[idx]) {
+            const auto &buffer = bufferSlots[idx][entry.second];
+            // read() addresses a parity-specific buffer with
+            //   bufferKey = columnId * 2 + parity.
+            // Selective scheduling compares one file demand against both
+            // parity sets, so its capacity snapshot must use the logical
+            // column id.  Publishing bufferKey here makes every demand look
+            // like a missing column and disables all task transfers.
+            if (buffer) result[idx][entry.first / 2] = buffer->size();
+        }
+    }
+    return result;
+}
+
+int DynamicBufferPool::GetBufferSlotIndex(uint32_t colId) {
+    auto it = colToSlot[currBufferIdx].find(colId);
+    if (it == colToSlot[currBufferIdx].end()) {
         return -1;
     }
     return static_cast<int>(it->second);
 }
 
-std::shared_ptr<ByteBuffer> DynamicBufferPool::GrowBuffer(uint32_t colId, uint64_t newSize)
-{
-    if (!isInitialized)
-    {
+int64_t DynamicBufferPool::GetBufferId(uint32_t index) {
+    // Similar to BufferPool::GetBufferId: combine index with buffer set
+    return index + currBufferIdx * colCount;
+}
+
+void DynamicBufferPool::Switch() {
+    // Switch between buffer sets for double buffering
+    currBufferIdx = 1 - currBufferIdx;
+    nextBufferIdx = 1 - nextBufferIdx;
+    currentUsedSlots = currentUsedSlots_arr[currBufferIdx];
+}
+
+std::shared_ptr<ByteBuffer> DynamicBufferPool::GrowBuffer(uint32_t colId, uint64_t newSize) {
+    if (!isInitialized) {
         throw InvalidArgumentException("DynamicBufferPool::GrowBuffer: pool not initialized");
     }
 
-    auto it = colToSlot.find(colId);
-    if (it == colToSlot.end())
-    {
-        throw InvalidArgumentException("DynamicBufferPool::GrowBuffer: buffer not found for colId " +
-                                       std::to_string(colId));
+    auto it = colToSlot[currBufferIdx].find(colId);
+    if (it == colToSlot[currBufferIdx].end()) {
+        throw InvalidArgumentException("DynamicBufferPool::GrowBuffer: buffer not found for colId " + std::to_string(colId));
     }
 
     uint32_t slotIndex = it->second;
-    auto oldBuffer = bufferSlots[slotIndex];
+    auto oldBuffer = bufferSlots[currBufferIdx][slotIndex];
 
-    if (oldBuffer == nullptr)
-    {
+    if (oldBuffer == nullptr) {
         throw InvalidArgumentException("DynamicBufferPool::GrowBuffer: buffer slot is null");
     }
 
-    if (newSize <= oldBuffer->size())
-    {
+    if (newSize <= oldBuffer->size()) {
         BufferPoolStats::Instance().RecordReuse(BufferPoolStatsMode::Dynamic);
         return oldBuffer;
     }
 
     auto newBuffer = directIoLib->allocateDirectBuffer(newSize, false);
-    if (newBuffer == nullptr)
-    {
+    if (newBuffer == nullptr) {
         throw InvalidArgumentException("DynamicBufferPool::GrowBuffer: failed to allocate new buffer");
     }
 
-    memcpy(newBuffer->getPointer(), oldBuffer->getPointer(), oldBuffer->size());
-    memset(static_cast<uint8_t *>(newBuffer->getPointer()) + oldBuffer->size(), 0, newSize - oldBuffer->size());
-    if (!UpdateBufferRegistration(slotIndex, newBuffer))
-    {
+    // Update buffer slot in current buffer set
+    bufferSlots[currBufferIdx][slotIndex] = newBuffer;
+
+    // Update io_uring registration
+    if (!UpdateBufferRegistration(slotIndex, newBuffer)) {
+        // Rollback on failure
+        bufferSlots[currBufferIdx][slotIndex] = oldBuffer;
         throw InvalidArgumentException("DynamicBufferPool::GrowBuffer: failed to update buffer registration");
     }
-    bufferSlots[slotIndex] = newBuffer;
     BufferPoolStats::Instance().RecordFree(BufferPoolStatsMode::Dynamic, oldBuffer->size());
     BufferPoolStats::Instance().RecordAllocation(BufferPoolStatsMode::Dynamic, newBuffer->size());
-    BufferPoolStats::Instance().RecordRegistrationUpdate(BufferPoolStatsMode::Dynamic, oldBuffer->size(),
-                                                         newBuffer->size());
+    BufferPoolStats::Instance().RecordRegistrationUpdate(
+        BufferPoolStatsMode::Dynamic, oldBuffer->size(), newBuffer->size());
     BufferPoolStats::Instance().RecordGrowth(BufferPoolStatsMode::Dynamic);
 
     return newBuffer;
 }
 
-void DynamicBufferPool::ReleaseBuffer(uint32_t colId)
-{
-    auto it = colToSlot.find(colId);
-    if (it == colToSlot.end())
-    {
-        return;
+void DynamicBufferPool::ReleaseBuffer(uint32_t colId) {
+    auto it = colToSlot[currBufferIdx].find(colId);
+    if (it == colToSlot[currBufferIdx].end()) {
+        return; // Already released or never allocated
     }
 
     uint32_t slotIndex = it->second;
-    uint64_t bufferSize = bufferSlots[slotIndex] == nullptr ? 0 : bufferSlots[slotIndex]->size();
+    const auto buffer = bufferSlots[currBufferIdx][slotIndex];
+    const uint64_t bufferSize = buffer ? buffer->size() : 0;
 
+    // Clear buffer slot in current buffer set
+    bufferSlots[currBufferIdx][slotIndex] = nullptr;
+
+    // Update iovec to null (unregister from io_uring)
+    iovecs[slotIndex].iov_base = nullptr;
+    iovecs[slotIndex].iov_len = 0;
+
+    // Update io_uring registration (set to null)
     struct iovec nullIov;
     nullIov.iov_base = nullptr;
     nullIov.iov_len = 0;
-    int ret = io_uring_register_buffers_update_tag(ring, slotIndex, &nullIov, nullptr, 1);
-    if (ret != 1)
-    {
-        throw InvalidArgumentException("DynamicBufferPool::ReleaseBuffer: failed to unregister buffer slot " +
-                                       std::to_string(slotIndex));
-    }
+    io_uring_register_buffers_update_tag(ring, slotIndex, &nullIov, NULL, 1);
 
-    iovecs[slotIndex] = nullIov;
-    bufferSlots[slotIndex] = nullptr;
-    slotToCol.erase(slotIndex);
-    colToSlot.erase(colId);
+    // Remove mappings from current buffer set
+    slotToCol[currBufferIdx].erase(slotIndex);
+    colToSlot[currBufferIdx].erase(colId);
+
+    // Return slot to free pool of current buffer set
     FreeSlot(slotIndex);
     BufferPoolStats::Instance().RecordUnregistration(BufferPoolStatsMode::Dynamic, bufferSize);
     BufferPoolStats::Instance().RecordFree(BufferPoolStatsMode::Dynamic, bufferSize);
 
-    if (currentUsedSlots > 0)
-    {
-        currentUsedSlots--;
+    if (currentUsedSlots_arr[currBufferIdx] > 0) {
+        currentUsedSlots_arr[currBufferIdx]--;
     }
+    currentUsedSlots = currentUsedSlots_arr[currBufferIdx];
 }
 
-bool DynamicBufferPool::IsInitialized() { return isInitialized; }
+bool DynamicBufferPool::IsInitialized() {
+    return isInitialized;
+}
 
-uint32_t DynamicBufferPool::GetBufferCount() { return currentUsedSlots; }
+uint32_t DynamicBufferPool::GetBufferCount() {
+    return currentUsedSlots;
+}
 
-uint32_t DynamicBufferPool::GetMaxSlots() { return maxBufferSlots; }
+uint32_t DynamicBufferPool::GetMaxSlots() {
+    return maxBufferSlots;
+}
 
-void DynamicBufferPool::Reset()
-{
-    if (!isInitialized)
-    {
+void DynamicBufferPool::Reset() {
+    if (!isInitialized) {
         return;
     }
 
     uint64_t allocatedBytes = 0;
-    for (const auto &buffer : bufferSlots)
-    {
-        if (buffer != nullptr)
-        {
-            allocatedBytes += buffer->size();
-        }
-    }
-    if (ring != nullptr)
-    {
+    for (const auto &set : bufferSlots)
+        for (const auto &buffer : set)
+            if (buffer) allocatedBytes += buffer->size();
+
+    // Unregister buffers from io_uring
+    if (ring != nullptr) {
         io_uring_unregister_buffers(ring);
     }
-    BufferPoolStats::Instance().RecordUnregistration(BufferPoolStatsMode::Dynamic, allocatedBytes);
-    for (const auto &buffer : bufferSlots)
-    {
-        if (buffer != nullptr)
-        {
-            BufferPoolStats::Instance().RecordFree(BufferPoolStatsMode::Dynamic, buffer->size());
+    BufferPoolStats::Instance().RecordUnregistration(
+        BufferPoolStatsMode::Dynamic, allocatedBytes);
+    for (const auto &set : bufferSlots)
+        for (const auto &buffer : set)
+            if (buffer)
+                BufferPoolStats::Instance().RecordFree(
+                    BufferPoolStatsMode::Dynamic, buffer->size());
+
+    // Clear all data structures for both buffer sets
+    for (int idx = 0; idx < 2; idx++) {
+        bufferSlots[idx].clear();
+        while (!freeSlots[idx].empty()) {
+            freeSlots[idx].pop();
         }
+        colToSlot[idx].clear();
+        slotToCol[idx].clear();
+        currentUsedSlots_arr[idx] = 0;
     }
 
-    bufferSlots.clear();
-    while (!freeSlots.empty())
-    {
-        freeSlots.pop();
-    }
-    colToSlot.clear();
-    slotToCol.clear();
-
-    if (iovecs != nullptr)
-    {
+    // Free iovecs
+    if (iovecs != nullptr) {
         free(iovecs);
         iovecs = nullptr;
     }
 
+    // Reset state
     ring = nullptr;
     maxBufferSlots = 0;
     currentUsedSlots = 0;
+    currBufferIdx = 1;
+    nextBufferIdx = 0;
+    colCount = 0;
     isInitialized = false;
     directIoLib = nullptr;
-    placeholderBuffer = nullptr;
 }
 
-std::shared_ptr<DirectIoLib> DynamicBufferPool::GetDirectIoLib() { return directIoLib; }
+std::shared_ptr<DirectIoLib> DynamicBufferPool::GetDirectIoLib() {
+    return directIoLib;
+}
 
-int DynamicBufferPool::AllocateSlot()
-{
-    if (freeSlots.empty())
-    {
-        return -1;
+// Private methods
+
+int DynamicBufferPool::AllocateSlot() {
+    if (freeSlots[currBufferIdx].empty()) {
+        return -1; // No free slots available
     }
 
-    uint32_t slotIndex = freeSlots.front();
-    freeSlots.pop();
+    uint32_t slotIndex = freeSlots[currBufferIdx].front();
+    freeSlots[currBufferIdx].pop();
+
+    // Slot index is already in the correct range for the current buffer set
     return static_cast<int>(slotIndex);
 }
 
-void DynamicBufferPool::FreeSlot(uint32_t slotIndex)
-{
-    if (slotIndex >= maxBufferSlots)
-    {
+void DynamicBufferPool::FreeSlot(uint32_t slotIndex) {
+    if (slotIndex >= maxBufferSlots) {
         return;
     }
-    freeSlots.push(slotIndex);
+    freeSlots[currBufferIdx].push(slotIndex);
 }
 
-bool DynamicBufferPool::UpdateBufferRegistration(uint32_t slotIndex, const std::shared_ptr<ByteBuffer> &buffer)
-{
-    if (slotIndex >= maxBufferSlots || buffer == nullptr)
-    {
+bool DynamicBufferPool::UpdateBufferRegistration(uint32_t slotIndex, std::shared_ptr<ByteBuffer> buffer) {
+    if (slotIndex >= maxBufferSlots || buffer == nullptr) {
         return false;
     }
 
-    struct iovec newIovec;
-    newIovec.iov_base = buffer->getPointer();
-    newIovec.iov_len = buffer->size();
-    int ret = io_uring_register_buffers_update_tag(ring, slotIndex, &newIovec, nullptr, 1);
-    if (ret != 1)
-    {
+    // Update iovec
+    iovecs[slotIndex].iov_base = buffer->getPointer();
+    iovecs[slotIndex].iov_len = buffer->size();
+
+    // Use io_uring_register_buffers_update_tag to dynamically update the buffer
+    // This updates a single buffer at the specified offset
+    int ret = io_uring_register_buffers_update_tag(ring, slotIndex, &iovecs[slotIndex], NULL, 1);
+
+    if (ret < 0) {
+        // Rollback iovec on failure
+        iovecs[slotIndex].iov_base = nullptr;
+        iovecs[slotIndex].iov_len = 0;
         return false;
     }
-    iovecs[slotIndex] = newIovec;
+
     return true;
 }

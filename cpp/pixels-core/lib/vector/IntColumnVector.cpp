@@ -25,13 +25,14 @@
 #include <cstdlib>
 #include <new>
 #include <vector/IntColumnVector.h>
+#include "utils/AlignedMemory.h"
 
 IntColumnVector::IntColumnVector(uint64_t len, bool encoding, bool isLong)
         : ColumnVector (len, encoding)
 {
 
-    posix_memalign (reinterpret_cast<void **>(&intVector), 32,
-                    len * sizeof (int32_t));
+    pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&intVector), 32,
+                                    len * sizeof(int32_t));
 
     memoryUsage += (long) sizeof (long) * len;
 }
@@ -43,7 +44,7 @@ void IntColumnVector::close()
         ColumnVector::close ();
         if (encoding && intVector != nullptr)
         {
-            free (intVector);
+            pixels::memory::AlignedFree(intVector);
         }
         intVector = nullptr;
     }
@@ -80,7 +81,7 @@ void IntColumnVector::setExternalData(int *data)
 {
     if (ownsData && intVector != nullptr)
     {
-        free(intVector);
+        pixels::memory::AlignedFree(intVector);
     }
     intVector = data;
     ownsData = false;
@@ -92,8 +93,8 @@ void IntColumnVector::ensureOwnedData()
     {
         return;
     }
-    posix_memalign(reinterpret_cast<void **>(&intVector), 32,
-                   length * sizeof(int32_t));
+    pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&intVector), 32,
+                                    length * sizeof(int32_t));
     if (intVector == nullptr)
     {
         throw std::bad_alloc();
@@ -148,13 +149,13 @@ void IntColumnVector::ensureSize(uint64_t size, bool preserveData)
     if (length < size)
     {
         int *oldVector = intVector;
-        posix_memalign (reinterpret_cast<void **>(&intVector), 32,
-                        size * sizeof (int32_t));
+        pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&intVector), 32,
+                                        size * sizeof(int32_t));
         if (preserveData)
         {
             std::copy (oldVector, oldVector + length, intVector);
         }
-        delete[] oldVector;
+        pixels::memory::AlignedFree(oldVector);
         memoryUsage += (long) sizeof (int) * (size - length);
         resize (size);
     }

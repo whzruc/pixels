@@ -28,6 +28,7 @@
 #include <iostream>
 #include <cstdlib>
 #include "vector/DecimalColumnVector.h"
+#include "utils/AlignedMemory.h"
 
 DecimalColumnVector::DecimalColumnVector(
         uint64_t len,
@@ -51,7 +52,7 @@ DecimalColumnVector::DecimalColumnVector(
 
     size_t bytes = len * ElementSize();
 
-    if (posix_memalign(&vector, 32, bytes) != 0)
+    if (pixels::memory::AlignedAllocate(&vector, 32, bytes) != 0)
         throw std::runtime_error("Decimal allocation failed");
 
     memoryUsage += bytes;
@@ -66,7 +67,7 @@ void DecimalColumnVector::close()
         if (physical_type_ == pixels::PhysicalType::INT16 ||
             physical_type_ == pixels::PhysicalType::INT32)
         {
-            free (vector);
+            pixels::memory::AlignedFree(vector);
         }
 
         closed = true;
@@ -174,13 +175,13 @@ void DecimalColumnVector::ensureSize(uint64_t size, bool preserveData)
     size_t old_bytes = length * ElementSize();
     size_t new_bytes = size * ElementSize();
 
-    if (posix_memalign(&vector, 32, new_bytes) != 0)
+    if (pixels::memory::AlignedAllocate(&vector, 32, new_bytes) != 0)
         throw std::runtime_error("Decimal resize failed");
 
     if (preserveData && old)
         std::memcpy(vector, old, old_bytes);
 
-    free(old);
+    pixels::memory::AlignedFree(old);
 
     memoryUsage += (new_bytes - old_bytes);
     resize(size);

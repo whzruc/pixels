@@ -77,12 +77,21 @@ target_link_libraries(pixels-common
 		pthread
 )
 
+# Pixels aligned allocations call DuckDB's prefixed jemalloc entry points
+# directly when the unified allocator is enabled.  Link the allocator through
+# pixels-common so standalone Pixels benchmarks and tests resolve the same
+# symbols as the DuckDB executable instead of depending on final link order.
+if(PIXELS_USE_DUCKDB_JEMALLOC)
+	target_link_libraries(pixels-common PRIVATE jemalloc_extension)
+endif()
+
 # Optional SPDK user-space NVMe backend.  Disabled by default so ordinary
 # io_uring builds do not require SPDK/DPDK development packages.
 option(PIXELS_ENABLE_SPDK "Build with SPDK user-space NVMe driver support" OFF)
 
 if(PIXELS_ENABLE_SPDK)
 	find_package(PkgConfig REQUIRED)
+	find_package(OpenSSL REQUIRED)
 	pkg_check_modules(SPDK_NVME REQUIRED spdk_nvme)
 	pkg_check_modules(SPDK_ENV REQUIRED spdk_env_dpdk)
 	add_definitions(-DPIXELS_ENABLE_SPDK)
@@ -95,6 +104,8 @@ if(PIXELS_ENABLE_SPDK)
 	target_link_libraries(pixels-common PRIVATE
 		${SPDK_NVME_LINK_LIBRARIES}
 		${SPDK_ENV_LINK_LIBRARIES}
+		OpenSSL::SSL
+		OpenSSL::Crypto
 		uuid)
 	set_target_properties(pixels-common PROPERTIES
 		INSTALL_RPATH "/usr/local/lib"

@@ -1,0 +1,25 @@
+scope,backend,threads,single_over_double,archive,member
+q24-profiler,Pixels / io_uring,12,1.136,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+q24-profiler,Pixels / io_uring,24,1.129,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+q24-profiler,Pixels / io_uring,48,1.068,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+q24-profiler,SPDK,12,1.217,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+q24-profiler,SPDK,24,1.159,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+q24-profiler,SPDK,48,1.095,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+q24-profiler,Parquet / io_uring,12,1.212,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+q24-profiler,Parquet / io_uring,24,1.215,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+q24-profiler,Parquet / io_uring,48,1.056,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,SPDK,4,1.178,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,SPDK,8,1.173,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,SPDK,12,1.158,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,SPDK,24,1.111,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,SPDK,48,1.046,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,io_uring,4,1.14,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,io_uring,8,1.139,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,io_uring,12,1.123,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,io_uring,24,1.105,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,io_uring,48,1.053,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,pread,4,1.005,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,pread,8,0.994,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,pread,12,1.002,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,pread,24,1.0,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md
+44-query-geomean,pread,48,1.003,/tmp/pixels-rebuild-untracked-20260825.tar.gz,testcase/performance-test/comparison_spdk_20260715_vs_iouring_20260716/EXPERIMENT_REPORT.md

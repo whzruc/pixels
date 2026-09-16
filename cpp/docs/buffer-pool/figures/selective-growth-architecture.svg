@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Selective buffer growth architecture for Dynamic double buffering</title>
+  <desc id="desc">A paper-style architecture diagram showing metadata-based demand estimation, local capacity checking, task routing to a worker with two fitting buffers, and local growth fallback.</desc>
+  <defs>
+    <style>
+      .title { font: 700 31px Arial, "Noto Sans", sans-serif; fill: #172033; }
+      .subtitle { font: 400 17px Arial, "Noto Sans", sans-serif; fill: #526077; }
+      .section { font: 700 21px Arial, "Noto Sans", sans-serif; fill: #172033; }
+      .label { font: 600 17px Arial, "Noto Sans", sans-serif; fill: #263248; }
+      .small { font: 400 15px Arial, "Noto Sans", sans-serif; fill: #526077; }
+      .tiny { font: 600 13px Arial, "Noto Sans", sans-serif; fill: #526077; letter-spacing: .4px; }
+      .mono { font: 600 14px "DejaVu Sans Mono", monospace; fill: #263248; }
+      .panel { fill: #ffffff; stroke: #b9c3d3; stroke-width: 2; }
+      .soft { fill: #f6f8fb; stroke: #cbd3df; stroke-width: 1.5; }
+      .blue { fill: #eaf2ff; stroke: #4b78b8; stroke-width: 2; }
+      .teal { fill: #e5f6f2; stroke: #178a7a; stroke-width: 2; }
+      .orange { fill: #fff2df; stroke: #d17822; stroke-width: 2; }
+      .red { fill: #fff0ef; stroke: #c24d49; stroke-width: 2; }
+      .arrow { fill: none; stroke: #526077; stroke-width: 2.5; marker-end: url(#arrow); }
+      .route { fill: none; stroke: #178a7a; stroke-width: 3.5; marker-end: url(#arrowTeal); }
+      .fallback { fill: none; stroke: #d17822; stroke-width: 3; stroke-dasharray: 9 7; marker-end: url(#arrowOrange); }
+      .metadata { fill: none; stroke: #4b78b8; stroke-width: 2.5; stroke-dasharray: 7 6; marker-end: url(#arrowBlue); }
+    </style>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#172033" flood-opacity="0.11"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#526077"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#4b78b8"/>
+    </marker>
+    <marker id="arrowTeal" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#178a7a"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#d17822"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="900" fill="#ffffff"/>
+  <text x="800" y="49" text-anchor="middle" class="title">Selective Buffer Growth for Dynamic Double Buffering</text>
+  <text x="800" y="78" text-anchor="middle" class="subtitle">Reuse existing per-worker capacity before growing another registered buffer</text>
+
+  <!-- Query-scoped scheduler -->
+  <g filter="url(#shadow)">
+    <rect x="465" y="108" width="670" height="190" rx="18" class="panel"/>
+  </g>
+  <text x="800" y="140" text-anchor="middle" class="section">Query-scoped Selective Scheduler</text>
+  <rect x="495" y="163" width="285" height="103" rx="12" class="blue"/>
+  <text x="638" y="189" text-anchor="middle" class="label">Capacity Registry</text>
+  <text x="520" y="216" class="small">Worker A: slot 0 / slot 1</text>
+  <text x="520" y="240" class="small">Worker B: slot 0 / slot 1</text>
+  <rect x="817" y="163" width="288" height="103" rx="12" class="teal"/>
+  <text x="961" y="189" text-anchor="middle" class="label">Bounded Work Queues</text>
+  <rect x="844" y="207" width="48" height="34" rx="6" fill="#ffffff" stroke="#178a7a" stroke-width="1.5"/>
+  <text x="868" y="229" text-anchor="middle" class="mono">F7</text>
+  <rect x="900" y="207" width="48" height="34" rx="6" fill="#ffffff" stroke="#a7b2c3" stroke-width="1.5"/>
+  <text x="924" y="229" text-anchor="middle" class="small">...</text>
+  <text x="977" y="229" class="small">limit = K</text>
+
+  <!-- Worker A -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="352" width="605" height="392" rx="20" class="panel"/>
+  </g>
+  <rect x="70" y="352" width="605" height="54" rx="20" fill="#edf1f7"/>
+  <rect x="70" y="386" width="605" height="20" fill="#edf1f7"/>
+  <text x="98" y="386" class="section">Worker A — source</text>
+  <text x="630" y="385" text-anchor="end" class="tiny">THREAD-LOCAL RING</text>
+
+  <rect x="98" y="431" width="250" height="134" rx="13" class="blue"/>
+  <text x="223" y="458" text-anchor="middle" class="label">Metadata inspection</text>
+  <rect x="120" y="476" width="60" height="58" rx="7" fill="#ffffff" stroke="#4b78b8" stroke-width="1.5"/>
+  <text x="150" y="511" text-anchor="middle" class="mono">F7</text>
+  <text x="199" y="491" class="small">required</text>
+  <text x="199" y="514" class="mono">c0  64 MiB</text>
+  <text x="199" y="537" class="mono">c1   8 MiB</text>
+
+  <rect x="377" y="431" width="270" height="134" rx="13" class="red"/>
+  <text x="512" y="458" text-anchor="middle" class="label">Current allocation slot</text>
+  <text x="402" y="489" class="mono">c0</text>
+  <rect x="438" y="476" width="176" height="17" rx="5" fill="#ffffff" stroke="#c24d49"/>
+  <rect x="438" y="476" width="44" height="17" rx="5" fill="#d97571"/>
+  <text x="612" y="490" text-anchor="end" class="tiny">16 / 64</text>
+  <text x="402" y="526" class="mono">c1</text>
+  <rect x="438" y="513" width="176" height="17" rx="5" fill="#ffffff" stroke="#178a7a"/>
+  <rect x="438" y="513" width="176" height="17" rx="5" fill="#48aa98"/>
+  <text x="612" y="527" text-anchor="end" class="tiny">8 / 8</text>
+  <text x="512" y="551" text-anchor="middle" class="tiny" fill="#c24d49">LOCAL CAPACITY INSUFFICIENT</text>
+
+  <rect x="98" y="594" width="250" height="113" rx="13" class="soft"/>
+  <text x="223" y="622" text-anchor="middle" class="label">Dynamic double buffer</text>
+  <rect x="122" y="643" width="90" height="39" rx="7" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="167" y="668" text-anchor="middle" class="mono">slot 0</text>
+  <rect x="234" y="643" width="90" height="39" rx="7" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="279" y="668" text-anchor="middle" class="mono">slot 1</text>
+
+  <rect x="377" y="594" width="270" height="113" rx="13" class="orange"/>
+  <text x="512" y="622" text-anchor="middle" class="label">Local growth fallback</text>
+  <text x="512" y="649" text-anchor="middle" class="small">GrowBuffer(c0, 64 MiB)</text>
+  <text x="512" y="674" text-anchor="middle" class="small">update io_uring registration</text>
+  <text x="512" y="695" text-anchor="middle" class="tiny">NO REMOTE WAITING</text>
+
+  <!-- Worker B -->
+  <g filter="url(#shadow)">
+    <rect x="925" y="352" width="605" height="392" rx="20" class="panel"/>
+  </g>
+  <rect x="925" y="352" width="605" height="54" rx="20" fill="#e7f5f2"/>
+  <rect x="925" y="386" width="605" height="20" fill="#e7f5f2"/>
+  <text x="953" y="386" class="section">Worker B — capacity owner</text>
+  <text x="1485" y="385" text-anchor="end" class="tiny">THREAD-LOCAL RING</text>
+
+  <rect x="953" y="431" width="245" height="134" rx="13" class="teal"/>
+  <text x="1076" y="458" text-anchor="middle" class="label">Worker-local queue</text>
+  <rect x="983" y="482" width="68" height="49" rx="7" fill="#ffffff" stroke="#178a7a" stroke-width="2"/>
+  <text x="1017" y="512" text-anchor="middle" class="mono">F7</text>
+  <path d="M1066 506 H1160" class="route"/>
+  <text x="1112" y="492" text-anchor="middle" class="tiny">DEQUEUE</text>
+
+  <rect x="1228" y="431" width="274" height="134" rx="13" class="teal"/>
+  <text x="1365" y="458" text-anchor="middle" class="label">Both slots fit F7</text>
+  <rect x="1254" y="480" width="98" height="55" rx="7" fill="#ffffff" stroke="#178a7a" stroke-width="1.5"/>
+  <text x="1303" y="502" text-anchor="middle" class="mono">slot 0</text>
+  <text x="1303" y="523" text-anchor="middle" class="tiny">c0 96 · c1 12</text>
+  <rect x="1377" y="480" width="98" height="55" rx="7" fill="#ffffff" stroke="#178a7a" stroke-width="1.5"/>
+  <text x="1426" y="502" text-anchor="middle" class="mono">slot 1</text>
+  <text x="1426" y="523" text-anchor="middle" class="tiny">c0 80 · c1 10</text>
+  <text x="1365" y="554" text-anchor="middle" class="tiny">PER-COLUMN FIT</text>
+
+  <rect x="953" y="594" width="549" height="113" rx="13" class="soft"/>
+  <text x="1228" y="622" text-anchor="middle" class="label">Rebuild reader from shared footer cache</text>
+  <text x="1228" y="650" text-anchor="middle" class="small">submit data I/O using Worker B's existing registered buffer</text>
+  <rect x="1096" y="669" width="264" height="22" rx="6" fill="#48aa98"/>
+  <text x="1228" y="685" text-anchor="middle" class="tiny" fill="#ffffff">NO ADDITIONAL BUFFER GROWTH</text>
+
+  <!-- Inter-panel relationships -->
+  <path d="M348 460 C407 375, 458 330, 555 298" class="metadata"/>
+  <text x="410" y="358" class="tiny" fill="#4b78b8">DEMAND VECTOR</text>
+  <path d="M1044 298 C1115 318, 1135 345, 1116 430" class="route"/>
+  <text x="1137" y="333" class="tiny" fill="#178a7a">ROUTE FILE ID ONLY</text>
+  <path d="M785 298 C753 392, 695 505, 620 593" class="fallback"/>
+  <rect x="616" y="395" width="229" height="58" rx="9" fill="#ffffff" stroke="#d17822" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="731" y="418" text-anchor="middle" class="tiny" fill="#d17822">FALLBACK CONDITION</text>
+  <text x="731" y="440" text-anchor="middle" class="small">no fitting worker / queue full</text>
+
+  <!-- Invariants and legend -->
+  <rect x="70" y="782" width="1460" height="80" rx="14" fill="#f7f9fc" stroke="#d5dce7" stroke-width="1.5"/>
+  <text x="96" y="811" class="label">Safety invariants</text>
+  <circle cx="278" cy="806" r="6" fill="#178a7a"/>
+  <text x="294" y="812" class="small">buffers and io_uring never cross threads</text>
+  <circle cx="655" cy="806" r="6" fill="#4b78b8"/>
+  <text x="671" y="812" class="small">data I/O starts only after placement</text>
+  <circle cx="1000" cy="806" r="6" fill="#d17822"/>
+  <text x="1016" y="812" class="small">one hop per file</text>
+  <circle cx="1204" cy="806" r="6" fill="#64748b"/>
+  <text x="1220" y="812" class="small">same storage group</text>
+  <line x1="96" y1="838" x2="142" y2="838" class="metadata"/>
+  <text x="153" y="844" class="small">metadata / demand</text>
+  <line x1="365" y1="838" x2="411" y2="838" class="route"/>
+  <text x="422" y="844" class="small">selected task route</text>
+  <line x1="670" y1="838" x2="716" y2="838" class="fallback"/>
+  <text x="727" y="844" class="small">local growth fallback</text>
+  <text x="1498" y="844" text-anchor="end" class="tiny">CAPACITY VALUES ARE ILLUSTRATIVE</text>
+</svg>

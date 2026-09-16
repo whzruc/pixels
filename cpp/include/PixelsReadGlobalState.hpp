@@ -31,27 +31,60 @@
 #include "duckdb/function/scalar_function.hpp"
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include "PixelsReader.h"
-#include "PixelsFooterCache.h"
 #include "physical/StorageArrayScheduler.h"
+#include "PixelsFooterCache.h"
+#include "physical/SelectiveBufferScheduler.h"
 #include "profiler/TimeProfiler.h"
+#include <cstdlib>
 
 namespace duckdb
 {
 
     struct PixelsReadGlobalState : public GlobalTableFunctionState
     {
-        ~PixelsReadGlobalState() override
-        {
+        mutex lock;
+        std::unique_ptr<pixels::SelectiveBufferScheduler> selective;
+
+        ~PixelsReadGlobalState() override {
+            if (selective) {
+                const auto &s = selective->stats();
+                std::cerr << "[SelectiveBuffer] claimed=" << s.claimed
+                          << " transferred=" << s.transferred << " dequeued=" << s.dequeued
+                          << " local_fit=" << s.localFit << " local_grow=" << s.localGrow
+                          << " queue_high_water=" << s.queueHighWater
+                          << " queued_demand_bytes_high_water=" << s.queuedDemandBytesHighWater
+                          << " queue_wait_ns=" << s.queueWaitNs
+                          << " max_queue_wait_ns=" << s.maxQueueWaitNs
+                          << " gate_rejected=" << s.gateRejected
+                          << " queue_rejected=" << s.queueRejected
+                          << " no_receiver=" << s.noReceiver
+                          << " cost_evaluations=" << s.costEvaluations
+                          << " adaptive_limit_changes=" << s.adaptiveLimitChanges
+                          << " executed=" << s.executed
+                          << " observed_buffer_bytes=" << s.observedBufferBytes << '\n';
+                std::cerr << "[SelectiveBufferGrowth] allocations=" << s.allocations
+                          << " growths=" << s.growths << " growth_bytes=" << s.growthBytes << '\n';
+                if (selective->metricsEnabled()) {
+                    const char *prefix = std::getenv("PIXELS_SELECTIVE_METRICS_PREFIX");
+                    if (prefix != nullptr && prefix[0] != '\0') {
+                        try {
+                            selective->writeMetrics(prefix);
+                            std::cerr << "[SelectiveBufferMetrics] prefix=" << prefix << '\n';
+                        } catch (const std::exception &e) {
+                            std::cerr << "[SelectiveBufferMetrics] error=" << e.what() << '\n';
+                        }
+                    } else {
+                        std::cerr << "[SelectiveBufferMetrics] error=PIXELS_SELECTIVE_METRICS_PREFIX_not_set\n";
+                    }
+                }
+            }
             ::TimeProfiler::Instance().Print();
         }
 
-        mutex lock;
-
-        // Shared by every file reader and scan thread in this query.
+        // Shared footer cache across all scan threads for this query.
+        // FileTail data is immutable after file creation, so sharing is safe.
+        // The cache's internal lock guards concurrent first-miss writes.
         std::shared_ptr<PixelsFooterCache> footerCache = std::make_shared<PixelsFooterCache>();
-
-        atomic<int> active_threads; // Number of active threads
-        atomic<bool> all_done; // Whether all threads have completed
 
         //! The initial reader from the bind phase
         std::shared_ptr <PixelsReader> initialPixelsReader;
@@ -71,6 +104,10 @@ namespace duckdb
         idx_t batch_index;
 
         idx_t max_threads;
+
+        // active threads
+        atomic<int> active_threads; // Number of active threads
+        atomic<bool> all_done; // Whether all threads have completed
 
         TableFilterSet *filters;
 

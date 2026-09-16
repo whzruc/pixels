@@ -135,7 +135,7 @@ void PixelsRecordReaderImpl::checkBeforeRead()
     }
 
     // create column readers
-    auto columnSchemas = fileSchema->getChildren();
+    const auto &columnSchemas = fileSchema->getChildren();
     readers.clear();
     readers.resize(resultColumns.size());
     for (int i = 0; i < resultColumns.size(); i++)
@@ -399,7 +399,7 @@ void PixelsRecordReaderImpl::prepareRead()
 
     for (int i = 0; i < bbs.size(); i++)
     {
-        if (!rowGroupFooterCacheHit.at(i))
+        if (!rowGroupFooterCacheHit.at(fis[i]))
         {
             const pixels::fb::RowGroupFooter* parsed =
                 flatbuffers::GetRoot<pixels::fb::RowGroupFooter>((bbs[i]->getPointer()));
@@ -448,6 +448,28 @@ void PixelsRecordReaderImpl::asyncReadComplete(int requestSize)
 std::shared_ptr <PixelsBitMask> PixelsRecordReaderImpl::getFilterMask()
 {
     return filterMask;
+}
+
+pixels::SelectiveBufferScheduler::Demand PixelsRecordReaderImpl::prepareBufferDemand()
+{
+    if (!everPrepareRead) prepareRead();
+    // Existing Dynamic's parity is file-prefetch based, not pinned per RG.
+    // Fail closed until multi-RG lifetime handling has its own integration test.
+    if (targetRGNum != 1)
+        throw InvalidArgumentException("selective buffer V1 requires exactly one row group per file");
+    pixels::SelectiveBufferScheduler::Demand demand;
+    auto direct = DynamicBufferPool::GetDirectIoLib();
+    const bool aligned = ConfigFactory::Instance().boolCheckProperty("localfs.enable.direct.io");
+    for (const auto *rg : rowGroupFooters) {
+        for (int col : targetColumns) {
+            const auto *chunk = rg->rowGroupIndexEntry()->columnChunkIndexEntries()->Get(col);
+            const uint64_t offset = chunk->chunkOffset(), length = chunk->chunkLength();
+            const uint64_t bytes = aligned && direct
+                ? direct->blockEnd(offset + length) - direct->blockStart(offset) : length;
+            demand[col] = std::max(demand[col], bytes);
+        }
+    }
+    return demand;
 }
 
 bool PixelsRecordReaderImpl::read()

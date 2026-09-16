@@ -48,6 +48,8 @@ void GlobalStaticBufferPool::Initialize(const std::string &columnSizePath, int b
     }
 
     maxThreads = threadCount;
+    lockFreeLookup = ConfigFactory::Instance().getProperty(
+                         "pixels.static.buffer.lock_free_lookup", "false") == "true";
     directIoLib = std::make_shared<DirectIoLib>(blockSize);
     bool useHugePage = ConfigFactory::Instance().getProperty("pixel.static.buffer.hugepage", "false") == "true";
     int columnIndex = 0;
@@ -82,36 +84,42 @@ void GlobalStaticBufferPool::Initialize(const std::string &columnSizePath, int b
         }
     }
 
-    rings.resize(maxThreads, nullptr);
+    rings.resize(maxThreads);
     for (int threadId = 0; threadId < maxThreads; threadId++)
     {
-        rings[threadId] = new io_uring();
-        int ret = io_uring_queue_init(4096, rings[threadId], 0);
-        if (ret < 0)
+        rings[threadId].resize(RINGS_PER_THREAD, nullptr);
+        for (int ringSlot = 0; ringSlot < RINGS_PER_THREAD; ringSlot++)
         {
-            delete rings[threadId];
-            rings[threadId] = nullptr;
-            throw InvalidArgumentException("GlobalStaticBufferPool::Initialize: failed to initialize io_uring");
-        }
-        std::vector<struct iovec> iovecs(columnNames.size() * 2);
-        for (const auto &columnName : columnNames)
-        {
-            int index = columnIndexes.at(columnName) * 2;
-            for (int bufferId = 0; bufferId < 2; bufferId++)
+            rings[threadId][ringSlot] = new io_uring();
+            int ret = io_uring_queue_init(4096, rings[threadId][ringSlot], 0);
+            if (ret < 0)
             {
-                auto buffer = buffers.at(columnName)[threadId][bufferId];
-                iovecs[index + bufferId].iov_base = buffer->getPointer();
-                iovecs[index + bufferId].iov_len = buffer->size();
+                delete rings[threadId][ringSlot];
+                rings[threadId][ringSlot] = nullptr;
+                throw InvalidArgumentException(
+                    "GlobalStaticBufferPool::Initialize: failed to initialize io_uring");
             }
-        }
-        ret = io_uring_register_buffers(rings[threadId], iovecs.data(), iovecs.size());
-        if (ret != 0)
-        {
-            throw InvalidArgumentException("GlobalStaticBufferPool::Initialize: failed to register buffers");
-        }
-        for (const auto &iov : iovecs)
-        {
-            BufferPoolStats::Instance().RecordRegistration(BufferPoolStatsMode::Static, iov.iov_len);
+            std::vector<struct iovec> iovecs(columnNames.size() * 2);
+            for (const auto &columnName : columnNames)
+            {
+                int index = columnIndexes.at(columnName) * 2;
+                for (int bufferId = 0; bufferId < 2; bufferId++)
+                {
+                    auto buffer = buffers.at(columnName)[threadId][bufferId];
+                    iovecs[index + bufferId].iov_base = buffer->getPointer();
+                    iovecs[index + bufferId].iov_len = buffer->size();
+                }
+            }
+            ret = io_uring_register_buffers(rings[threadId][ringSlot], iovecs.data(), iovecs.size());
+            if (ret != 0)
+            {
+                throw InvalidArgumentException(
+                    "GlobalStaticBufferPool::Initialize: failed to register buffers");
+            }
+            for (const auto &iov : iovecs)
+            {
+                BufferPoolStats::Instance().RecordRegistration(BufferPoolStatsMode::Static, iov.iov_len);
+            }
         }
     }
     initialized = true;
@@ -134,11 +142,25 @@ int GlobalStaticBufferPool::AcquireThreadId()
     return assignedThreadId;
 }
 
-struct io_uring *GlobalStaticBufferPool::GetRing(int threadId) { return rings.at(threadId); }
+struct io_uring *GlobalStaticBufferPool::GetRing(int threadId) { return GetRing(threadId, 0); }
+
+struct io_uring *GlobalStaticBufferPool::GetRing(int threadId, int ringSlot)
+{
+    if (ringSlot < 0 || ringSlot >= RINGS_PER_THREAD)
+    {
+        throw InvalidArgumentException("GlobalStaticBufferPool::GetRing: invalid ring slot");
+    }
+    return rings.at(threadId).at(ringSlot);
+}
 
 std::shared_ptr<ByteBuffer> GlobalStaticBufferPool::GetBuffer(const std::string &columnName, int threadId, int bufferId)
 {
     BufferPoolStats::Instance().RecordReuse(BufferPoolStatsMode::Static);
+    if (!lockFreeLookup)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        return buffers.at(columnName).at(threadId).at(bufferId);
+    }
     return buffers.at(columnName).at(threadId).at(bufferId);
 }
 
@@ -169,12 +191,15 @@ void GlobalStaticBufferPool::Reset()
 {
     std::lock_guard<std::mutex> lock(mutex);
     size_t allocatedBytes = GetTotalAllocatedBytes();
-    for (auto ring : rings)
+    for (auto &threadRings : rings)
     {
-        if (ring != nullptr)
+        for (auto ring : threadRings)
         {
-            io_uring_queue_exit(ring);
-            delete ring;
+            if (ring != nullptr)
+            {
+                io_uring_queue_exit(ring);
+                delete ring;
+            }
         }
     }
     rings.clear();
@@ -195,5 +220,6 @@ void GlobalStaticBufferPool::Reset()
     directIoLib = nullptr;
     nextThreadId.store(0);
     maxThreads = 0;
+    lockFreeLookup = false;
     initialized = false;
 }

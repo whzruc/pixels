@@ -27,6 +27,7 @@
 #include <iomanip>
 
 #include "vector/TimestampColumnVector.h"
+#include "utils/AlignedMemory.h"
 
 TimestampColumnVector::TimestampColumnVector(int precision, bool encoding)
         : ColumnVector (VectorizedRowBatch::DEFAULT_SIZE, encoding)
@@ -37,8 +38,8 @@ TimestampColumnVector::TimestampColumnVector(int precision, bool encoding)
 TimestampColumnVector::TimestampColumnVector(uint64_t len, int precision, bool encoding) : ColumnVector (len, encoding)
 {
     this->precision = precision;
-    posix_memalign (reinterpret_cast<void **>(&this->times), 64,
-                    len * sizeof (long));
+    pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&this->times), 64,
+                                    len * sizeof(long));
 }
 
 void TimestampColumnVector::close()
@@ -48,7 +49,7 @@ void TimestampColumnVector::close()
         ColumnVector::close ();
         if (encoding && this->times != nullptr)
         {
-            free (this->times);
+            pixels::memory::AlignedFree(this->times);
         }
         this->times = nullptr;
     }
@@ -129,13 +130,13 @@ void TimestampColumnVector::ensureSize(uint64_t size, bool preserveData)
     if (length < size)
     {
         long *oldVector = times;
-        posix_memalign (reinterpret_cast<void **>(&times), 32,
-                        size * sizeof (int64_t));
+        pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&times), 32,
+                                        size * sizeof(int64_t));
         if (preserveData)
         {
             std::copy (oldVector, oldVector + length, times);
         }
-        delete[] oldVector;
+        pixels::memory::AlignedFree(oldVector);
         memoryUsage += (long) sizeof (long) * (size - length);
         resize (size);
     }

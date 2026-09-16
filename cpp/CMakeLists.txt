@@ -5,6 +5,14 @@ set(TARGET_NAME pixels)
 set(DCMAKE_EXPORT_COMPILE_COMMANDS=1)
 set(EXTENSION_NAME ${TARGET_NAME}_extension)
 project(${TARGET_NAME})
+enable_testing()
+
+option(PIXELS_USE_DUCKDB_JEMALLOC
+       "Use DuckDB's prefixed jemalloc for Pixels aligned allocations" OFF)
+
+if(PIXELS_USE_DUCKDB_JEMALLOC)
+        add_compile_definitions(PIXELS_USE_DUCKDB_JEMALLOC)
+endif()
 
 add_definitions(-DDUCKDB_EXTENSION_LIBRARY)
 
@@ -25,6 +33,10 @@ set(ARROW_PARQUET ON CACHE BOOL "" FORCE)
 set(ARROW_COMPUTE ON CACHE BOOL "" FORCE)
 set(ARROW_IPC ON CACHE BOOL "" FORCE)
 set(ARROW_DEPENDENCY_SOURCE BUNDLED CACHE STRING "" FORCE)
+# Snappy 1.1.10 declares compatibility with a CMake policy version that CMake
+# 4 no longer accepts. Keep Arrow/Parquet pinned, but use the ABI-stable system
+# Snappy package instead of patching the Arrow submodule in place.
+set(Snappy_SOURCE SYSTEM CACHE STRING "" FORCE)
 # The host already supplies Thrift; Arrow itself and Parquet remain pinned and
 # built from cpp/third-party/arrow. This also avoids an old Thrift sub-build
 # that is incompatible with CMake 4.

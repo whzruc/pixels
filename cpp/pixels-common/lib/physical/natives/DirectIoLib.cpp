@@ -23,6 +23,7 @@
  * @create 2023-04-19
  */
 #include "physical/natives/DirectIoLib.h"
+#include "utils/AlignedMemory.h"
 #include <sys/mman.h>  // mmap, munmap, madvise
 #include <new>
 #include <cstring>
@@ -130,7 +131,7 @@ std::shared_ptr<ByteBuffer> DirectIoLib::allocateDirectBuffer(long size, bool is
         uint8_t* directBufferPointer;
 
         // Allocate aligned memory using posix_memalign
-        if (posix_memalign((void**)&directBufferPointer, fsBlockSize, toAllocate) != 0)
+        if (pixels::memory::AlignedAllocate((void**)&directBufferPointer, fsBlockSize, toAllocate) != 0)
         {
             throw std::runtime_error("Normal memory allocation failed: " + std::string(strerror(errno)));
         }
@@ -140,7 +141,7 @@ std::shared_ptr<ByteBuffer> DirectIoLib::allocateDirectBuffer(long size, bool is
         {
             if (buf && buf->getBuffer())
             {
-                free(const_cast<uint8_t*>(buf->getBuffer()));
+                pixels::memory::AlignedFree(const_cast<uint8_t*>(buf->getBuffer()));
             }
             // delete buf;
         };
@@ -169,9 +170,17 @@ std::shared_ptr<ByteBuffer> DirectIoLib::read(int fd, long fileOffset,
         perror("pread failed");
         throw InvalidArgumentException("DirectIoLib::read: pread fail. ");
     }
-    auto bb = std::make_shared<ByteBuffer>(*directBuffer,
-                                           fileOffset - fileOffsetAligned, length);
-    return bb;
+    // ByteBuffer views do not own their backing allocation.  Metadata views
+    // can outlive the PhysicalReader that issued this read (the shared footer
+    // cache and selective task transfer both rely on that), so retain the
+    // direct buffer in the view's deleter.  Deleting the view itself is still
+    // required; its destructor will not free the borrowed byte range.
+    auto *view = new ByteBuffer(*directBuffer, fileOffset - fileOffsetAligned, length);
+    return std::shared_ptr<ByteBuffer>(view,
+        [owner = std::move(directBuffer)](ByteBuffer *buffer) mutable {
+            delete buffer;
+            owner.reset();
+        });
 }
 
 

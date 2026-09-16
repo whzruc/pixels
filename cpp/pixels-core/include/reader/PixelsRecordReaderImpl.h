@@ -41,6 +41,7 @@
 #include "physical/BufferPool.h"
 #include "physical/natives/DirectUringRandomAccessFile.h"
 #include "PixelsFilter.h"
+#include "physical/SelectiveBufferScheduler.h"
 
 class ChunkId
 {
@@ -78,6 +79,9 @@ public:
     std::shared_ptr <TypeDescription> getResultSchema() override;
 
     bool read();
+
+    // Inspect metadata only; do not issue data reads or modify buffer state.
+    pixels::SelectiveBufferScheduler::Demand prepareBufferDemand();
 
     std::shared_ptr <PixelsBitMask> getFilterMask();
 

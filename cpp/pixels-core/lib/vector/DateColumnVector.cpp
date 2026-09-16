@@ -27,11 +27,12 @@
 #include <iomanip>
 
 #include "vector/DateColumnVector.h"
+#include "utils/AlignedMemory.h"
 
 DateColumnVector::DateColumnVector(uint64_t len, bool encoding) : ColumnVector (len, encoding)
 {
-    posix_memalign (reinterpret_cast<void **>(&dates), 32,
-                    len * sizeof (int32_t));
+    pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&dates), 32,
+                                    len * sizeof(int32_t));
     memoryUsage += (long) sizeof (int) * len;
 }
 
@@ -41,7 +42,7 @@ void DateColumnVector::close()
     {
         if (encoding && dates != nullptr)
         {
-            free (dates);
+            pixels::memory::AlignedFree(dates);
         }
         dates = nullptr;
         ColumnVector::close ();
@@ -136,13 +137,13 @@ void DateColumnVector::ensureSize(uint64_t size, bool preserveData)
     if (length < size)
     {
         int *oldVector = dates;
-        posix_memalign (reinterpret_cast<void **>(&dates), 32,
-                        size * sizeof (int32_t));
+        pixels::memory::AlignedAllocate(reinterpret_cast<void **>(&dates), 32,
+                                        size * sizeof(int32_t));
         if (preserveData)
         {
             std::copy (oldVector, oldVector + length, dates);
         }
-        delete[] oldVector;
+        pixels::memory::AlignedFree(oldVector);
         memoryUsage += (long) sizeof (long) * (size - length);
         resize (size);
     }
