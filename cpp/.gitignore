@@ -5,8 +5,3 @@ plot
 **/cmake-build-debug
 **/CMakeCache.txt
 **/CMakeFiles
-# remove perf svg
-cpp/testcase/perf-*/*.svg/*.svg
-*.csv
-*.txt
-*.svg

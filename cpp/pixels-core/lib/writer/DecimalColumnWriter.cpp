@@ -38,7 +38,7 @@ int DecimalColumnWriter::write(std::shared_ptr<ColumnVector> vector, int size)
         throw std::invalid_argument("Invalid vector type");
     }
 
-    long *values = (long*)columnVector->vector;
+    long *values = columnVector->vector;
     EncodingUtils encodingUtils;
 
     for (int i = 0; i < size; i++)
@@ -49,7 +49,10 @@ int DecimalColumnWriter::write(std::shared_ptr<ColumnVector> vector, int size)
         if (columnVector->isNull[i])
         {
             hasNull = true;
-            encodingUtils.writeLongLE(outputStream, 0L);
+            if (nullsPadding)
+            {
+                encodingUtils.writeLongLE(outputStream, 0L);
+            }
         } else
         {
             if (byteOrder == ByteOrder::PIXELS_LITTLE_ENDIAN)
@@ -73,3 +76,4 @@ bool DecimalColumnWriter::decideNullsPadding(std::shared_ptr<PixelsWriterOption>
 {
     return writerOption->isNullsPadding();
 }
+

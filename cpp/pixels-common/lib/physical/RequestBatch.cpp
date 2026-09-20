@@ -54,9 +54,16 @@ std::vector <Request> RequestBatch::getRequests()
 //    return &pro;
 //}
 
-void RequestBatch::add(uint64_t queryId, uint64_t start, uint64_t length, int64_t bufferId)
+void RequestBatch::add(uint64_t queryId, uint64_t start, uint64_t length, std::string columnName,int64_t bufferId)
 {
-    Request request = Request(queryId, start, length, bufferId);
+    Request request = Request(queryId, start, length, columnName, bufferId);
+    requests.push_back(request);
+    size++;
+}
+
+void RequestBatch::add(uint64_t queryId, uint64_t start, uint64_t length,int64_t bufferId)
+{
+    Request request = Request(queryId, start, length,  bufferId);
     requests.push_back(request);
     size++;
 }
@@ -65,13 +72,4 @@ void RequestBatch::add(Request request)
 {
     requests.push_back(request);
     size++;
-}
-
-
-Request& RequestBatch::getRequest(int index)
-{
-    if (index < 0 || index >= size) {
-        throw std::out_of_range("RequestBatch::getRequest: index out of range");
-    }
-    return requests[index];
 }

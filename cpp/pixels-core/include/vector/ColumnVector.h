@@ -38,6 +38,8 @@
  * structure that is used in the inner loop of query execution.
  */
 
+#include "duckdb.h"
+
 #include "exception/InvalidArgumentException.h"
 #include <iostream>
 #include <memory>
@@ -54,7 +56,7 @@
  * The fields are public by design since this is a performance-critical
  * structure that is used in the inner loop of query execution.
  */
-using idx_t = uint64_t;
+
 class ColumnVector
 {
 public:
@@ -75,6 +77,8 @@ public:
      * later and nulls added.
      */
     uint8_t *isNull;
+    bool ownsIsNull;  // false when isNull points into external buffer (e.g. ByteBuffer)
+    bool ownsData;    // false when the subclass data pointer points into external buffer
 
     // If the whole column vector has no nulls, this is true, otherwise false.
     bool noNulls;
@@ -83,7 +87,6 @@ public:
     uint64_t *isValid;
 
     explicit ColumnVector(uint64_t len, bool encoding);
-    ~ColumnVector();
 
     idx_t getCapacity() const;
 

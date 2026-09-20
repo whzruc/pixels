@@ -27,31 +27,61 @@
 
 #include <iostream>
 #include <string>
-#include "pixels-common/pixels.pb.h"
+#include <memory>
+#include <shared_mutex>
+#include <utility>
+#include "pixels_generated.h"
 #include <unordered_map>
+#include "physical/natives/ByteBuffer.h"
 
-using namespace pixels::proto;
-typedef std::unordered_map <std::string, std::shared_ptr<FileTail>> FileTailTable;
-typedef std::unordered_map <std::string, std::shared_ptr<RowGroupFooter>> RGFooterTable;
+// Each FileTail entry owns its backing ByteBuffer so the FlatBuffer pointer
+// remains valid as long as the cache entry lives, regardless of reader lifetime.
+struct FileTailEntry {
+    std::shared_ptr<ByteBuffer> buffer;
+    const pixels::fb::FileTail* fileTail;
+};
+
+// Same ownership model for row group footers.
+struct RGFooterEntry {
+    std::shared_ptr<ByteBuffer> buffer;
+    const pixels::fb::RowGroupFooter* rgFooter;
+};
+
+typedef std::unordered_map<std::string, FileTailEntry> FileTailTable;
+typedef std::unordered_map<std::string, RGFooterEntry> RGFooterTable;
 
 class PixelsFooterCache
 {
 public:
     PixelsFooterCache();
 
-    void putFileTail(const std::string &id, std::shared_ptr <FileTail> fileTail);
+    // Takes ownership of buffer to extend its lifetime beyond the reader.
+    void putFileTail(const std::string &id, std::shared_ptr<ByteBuffer> buffer,
+                     const pixels::fb::FileTail* fileTail);
+
+    // Insert only if the key is absent (put-if-absent). Returns the cached
+    // pointer: the newly inserted one, or the pre-existing one if another
+    // thread raced and inserted first. Eliminates TOCTOU between contains+put.
+    const pixels::fb::FileTail* putFileTailIfAbsent(const std::string &id,
+                                                     std::shared_ptr<ByteBuffer> buffer,
+                                                     const pixels::fb::FileTail* fileTail);
 
     bool containsFileTail(const std::string &id);
 
-    std::shared_ptr <FileTail> getFileTail(const std::string &id);
+    const pixels::fb::FileTail* getFileTail(const std::string &id);
 
-    void putRGFooter(const std::string &id, std::shared_ptr <RowGroupFooter> footer);
+
+    // Takes ownership of buffer to keep the FlatBuffer pointer valid in the cache.
+    void putRGFooter(const std::string &id, std::shared_ptr<ByteBuffer> buffer,
+                     const pixels::fb::RowGroupFooter* footer);
 
     bool containsRGFooter(const std::string &id);
 
-    std::shared_ptr <RowGroupFooter> getRGFooter(const std::string &id);
+    const pixels::fb::RowGroupFooter* getRGFooter(const std::string &id);
+
 
 private:
+    mutable std::shared_mutex mutex_;
     FileTailTable fileTailCacheMap;
     RGFooterTable rowGroupFooterCacheMap;
 

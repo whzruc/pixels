@@ -25,19 +25,67 @@
 #include "reader/PixelsRecordReaderImpl.h"
 #include "physical/io/PhysicalLocalReader.h"
 #include "profiler/CountProfiler.h"
-std::mutex PixelsRecordReaderImpl::mutex_;
+#include "profiler/TimeProfiler.h"
+#include "physical/BufferPool.h"
+#include "physical/natives/DirectUringRandomAccessFile.h"
+#include "physical/natives/DirectUringRandomAccessFileNonFixed.h"
+#include "physical/DynamicBufferPool.h"
+#include "physical/natives/DirectUringRandomAccessFileDynamic.h"
+#include "physical/GlobalStaticBufferPool.h"
+#include "physical/ThreadContext.h"
+#ifdef PIXELS_ENABLE_SPDK
+#include "physical/SpdkBufferPool.h"
+#endif
+
+namespace
+{
+    bool BufferIdxDebugEnabled()
+    {
+        try
+        {
+            return ConfigFactory::Instance().boolCheckProperty("pixels.debug.bufferidx");
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    int BufferIdxDebugThread()
+    {
+        try
+        {
+            return std::stoi(ConfigFactory::Instance().getProperty("pixels.debug.bufferidx.thread"));
+        }
+        catch (...)
+        {
+            return -1;
+        }
+    }
+
+    bool ShouldPrintBufferIdxDebug(int threadId)
+    {
+        if (!BufferIdxDebugEnabled())
+        {
+            return false;
+        }
+        int debugThread = BufferIdxDebugThread();
+        return debugThread < 0 || debugThread == threadId;
+    }
+}
+
 PixelsRecordReaderImpl::PixelsRecordReaderImpl(std::shared_ptr <PhysicalReader> reader,
-                                               const pixels::proto::PostScript &pixelsPostScript,
-                                               const pixels::proto::Footer &pixelsFooter,
-                                               PixelsReaderOption &opt,
+                                               const pixels::fb::PostScript* pixelsPostScript,
+                                               const pixels::fb::Footer* pixelsFooter,
+                                               const PixelsReaderOption &opt,
                                                std::shared_ptr <PixelsFooterCache> pixelsFooterCache)
 {
     physicalReader = reader;
     footer = pixelsFooter;
     postScript = pixelsPostScript;
     footerCache = pixelsFooterCache;
-    option = std::move(opt);
-    // TODO: intialize all kinds of variable
+    option = opt;
+    // TODO: intialize all kinds of variables
     queryId = option.getQueryId();
     RGStart = option.getRGStart();
     RGLen = option.getRGLen();
@@ -46,10 +94,13 @@ PixelsRecordReaderImpl::PixelsRecordReaderImpl(std::shared_ptr <PhysicalReader> 
     // for test purpose, can we comment it temporarily
     // assert(batchSize >= STANDARD_VECTOR_SIZE);
     enabledFilterPushDown = option.isEnabledFilterPushDown();
-    if (enabledFilterPushDown) {
-        this->filter = option.extractFilter(); 
-    } else {
-        this->filter.filters.clear(); 
+    if (enabledFilterPushDown)
+    {
+        filter = option.getFilter();
+    }
+    else
+    {
+        filter = nullptr;
     }
     filterMask = nullptr;
     everRead = false;
@@ -58,7 +109,9 @@ PixelsRecordReaderImpl::PixelsRecordReaderImpl(std::shared_ptr <PhysicalReader> 
     curRGIdx = 0;
     curRowInRG = 0;
     curRGRowCount = 0;
-    fileName = physicalReader->getName();
+    pixelsBufferIdx = -1;
+    // Use full path as cache key to avoid collisions across SSDs.
+    fileName = physicalReader->getPath();
     enableEncodedVector = option.isEnableEncodedColumnVector();
     includedColumnNum = 0;
     endOfFile = false;
@@ -69,11 +122,11 @@ PixelsRecordReaderImpl::PixelsRecordReaderImpl(std::shared_ptr <PhysicalReader> 
 void PixelsRecordReaderImpl::checkBeforeRead()
 {
     // get file schema
-    auto fileColTypesFooterTypes = footer.types();
-    auto fileColTypes = std::vector < std::shared_ptr < pixels::proto::Type >> {};
-    for (const auto &type: fileColTypesFooterTypes)
+    auto fileColTypesFooterTypes = footer->types();
+    auto fileColTypes = std::vector<const pixels::fb::Type*>{};
+    for (int i = 0; i < fileColTypesFooterTypes->size(); i++)
     {
-        fileColTypes.emplace_back(std::make_shared<::pixels::proto::Type>(type));
+        fileColTypes.emplace_back(fileColTypesFooterTypes->Get(i));
     }
     // TODO: if fileCOlTypes == null
     fileSchema = TypeDescription::createSchema(fileColTypes);
@@ -90,7 +143,7 @@ void PixelsRecordReaderImpl::checkBeforeRead()
     {
         for (int j = 0; j < fileColTypes.size(); j++)
         {
-            if (icompare(col, fileColTypes.at(j)->name()))
+            if (icompare(col, fileColTypes.at(j)->name()->str()))
             {
                 optionColsIndices.emplace_back(j);
                 includedColumns.at(j) = true;
@@ -148,7 +201,7 @@ void PixelsRecordReaderImpl::checkBeforeRead()
 void PixelsRecordReaderImpl::UpdateRowGroupInfo()
 {
     // if not end of file, update row count
-    curRGRowCount = (int) footer.rowgroupinfos(targetRGs.at(curRGIdx)).numberofrows();
+    curRGRowCount = (int) footer->rowGroupInfos()->Get(targetRGs.at(curRGIdx))->numberOfRows();
 
     if (enabledFilterPushDown)
     {
@@ -158,22 +211,20 @@ void PixelsRecordReaderImpl::UpdateRowGroupInfo()
 
     curRGFooter = rowGroupFooters.at(curRGIdx);
     // refresh resultColumnsEncoded for reading the column vectors in the next row group.
-    const pixels::proto::RowGroupEncoding &rgEncoding = rowGroupFooters.at(curRGIdx)->rowgroupencoding();
+    const pixels::fb::RowGroupEncoding* rgEncoding = rowGroupFooters.at(curRGIdx)->rowGroupEncoding();
     for (int i = 0; i < includedColumnNum; i++)
     {
         resultColumnsEncoded.at(i) =
-                rgEncoding.columnchunkencodings(resultColumns.at(i))
-                        .kind() != pixels::proto::ColumnEncoding_Kind_NONE
+                rgEncoding->columnChunkEncodings()->Get(resultColumns.at(i))
+                        ->kind() != pixels::fb::EncodingKind_NONE
                 && enableEncodedVector;
     }
     for (int i = 0; i < resultColumns.size(); i++)
     {
-        curEncoding.at(i) = std::make_shared<pixels::proto::ColumnEncoding>(
-                rgEncoding.columnchunkencodings(resultColumns.at(i)));
+        curEncoding.at(i) = rgEncoding->columnChunkEncodings()->Get(resultColumns.at(i));
         curChunkBufferIndex.at(i) = resultColumns.at(i);
-        curChunkIndex.at(i) = std::make_shared<pixels::proto::ColumnChunkIndex>(curRGFooter->rowgroupindexentry()
-                                                                                        .columnchunkindexentries(
-                                                                                                resultColumns.at(i)));
+        curChunkIndex.at(i) = curRGFooter->rowGroupIndexEntry()
+                                     ->columnChunkIndexEntries()->Get(resultColumns.at(i));
     }
     // This flag makes sure that each row group invokes read()
     everRead = false;
@@ -186,78 +237,99 @@ void PixelsRecordReaderImpl::UpdateRowGroupInfo()
 // read value from chunkBuffer.
 std::shared_ptr <VectorizedRowBatch> PixelsRecordReaderImpl::readBatch(bool reuse)
 {
+    PROFILE_START("PixelsRecordReaderImpl.readBatch.Total");
+    
     if (endOfFile)
     {
         endOfFile = true;
+        PROFILE_END("PixelsRecordReaderImpl.readBatch.Total");
         return createEmptyEOFRowBatch(0);
     }
+    
     if (!everRead)
     {
+        PROFILE_START("PixelsRecordReaderImpl.readBatch.FirstRead");
         if (!read())
         {
             throw std::runtime_error("failed to read file");
         }
+        PROFILE_END("PixelsRecordReaderImpl.readBatch.FirstRead");
     }
 
-
-    // TODO: resultRowBatch.projectionSize
-
-
-    // update current batch size
+    PROFILE_START("PixelsRecordReaderImpl.readBatch.ComputeBatchSize");
     int curBatchSize = std::min(curRGRowCount - curRowInRG, std::min(batchSize, curRGRowCount));
+    PROFILE_END("PixelsRecordReaderImpl.readBatch.ComputeBatchSize");
+
+    // std::cout<<"ReadBatch: curRGRowCount: "<<curRGRowCount<<" curRowInRG: "<<curRowInRG<<" bathcSize: "<<batchSize<<std::endl;
     if (resultRowBatch == nullptr)
     {
+        PROFILE_START("PixelsRecordReaderImpl.readBatch.CreateRowBatch");
+        // std::cout<<"create new rowbatch"<<std::endl;
         resultRowBatch = resultSchema->createRowBatch(curBatchSize, resultColumnsEncoded);
+        PROFILE_END("PixelsRecordReaderImpl.readBatch.CreateRowBatch");
     }
     else
     {
+        PROFILE_START("PixelsRecordReaderImpl.readBatch.ResetRowBatch");
         resultRowBatch->reset();
+        PROFILE_END("PixelsRecordReaderImpl.readBatch.ResetRowBatch");
         if (curBatchSize != resultRowBatch->maxSize)
         {
+            PROFILE_START("PixelsRecordReaderImpl.readBatch.ResizeRowBatch");
             resultRowBatch->resize(curBatchSize);
+            PROFILE_END("PixelsRecordReaderImpl.readBatch.ResizeRowBatch");
         }
     }
 
     auto columnVectors = resultRowBatch->cols;
-    if (filterMask != nullptr) {
+    if (filterMask != nullptr)
+    {
+        PROFILE_START("PixelsRecordReaderImpl.readBatch.ResetFilterMask");
         filterMask->set();
+        PROFILE_END("PixelsRecordReaderImpl.readBatch.ResetFilterMask");
     }
 
-    if(asyncReadRequestNum > 0) {
-        asyncReadComplete(asyncReadRequestNum);
-    }
+    // if(asyncReadRequestNum > 0)
+    // {
+    //     // PROFILE_START("PixelsRecordReaderImpl.readBatch.AsyncReadComplete");
+    //     asyncReadComplete(asyncReadRequestNum);
+    //     // PROFILE_END("PixelsRecordReaderImpl.readBatch.AsyncReadComplete");
+    // }
 
     std::vector<int> filterColumnIndex;
-    if (!filter.filters.empty())
+    if (filter != nullptr)
     {
-        for (auto const& [col_idx, filter_ptr] : filter.filters) 
+        for (auto &filterCol: filter->filters)
         {
-            int index = curChunkBufferIndex.at(col_idx);
-            auto &encoding = curEncoding.at(col_idx);
-            auto &chunkIndex = curChunkIndex.at(col_idx);
-            readers.at(col_idx)->read(chunkBuffers.at(index), *encoding, curRowInRG, curBatchSize,
-                                postScript.pixelstride(), resultRowBatch->rowCount,columnVectors.at(col_idx), *chunkIndex, filterMask);
+            if (filterMask->isNone())
+            {
+                break;
+            }
+            int i = filterCol.first;
+            int index = curChunkBufferIndex.at(i);
+            auto &encoding = curEncoding.at(i);
+            auto &chunkIndex = curChunkIndex.at(i);
+            PROFILE_START("PixelsRecordReaderImpl.readBatch.ReadFilterColumns");
+            readers.at(i)->read(chunkBuffers.at(index), encoding, curRowInRG, curBatchSize,
+                                postScript->pixelStride(), resultRowBatch->rowCount,
+                                columnVectors.at(i), chunkIndex, filterMask);
+            PROFILE_END("PixelsRecordReaderImpl.readBatch.ReadFilterColumns");
             filterColumnIndex.emplace_back(index);
-
-            PixelsFilter::ApplyFilter(
-                columnVectors.at(col_idx), 
-                *filter_ptr,  
-                *filterMask, 
-                resultSchema->getChildren().at(col_idx)
-            );
+            PROFILE_START("PixelsRecordReaderImpl.readBatch.ApplyFilterExpr");
+            PixelsFilter::ApplyFilter(columnVectors.at(i), *filterCol.second, *filterMask,
+                                      resultSchema->getChildren().at(i));
+            PROFILE_END("PixelsRecordReaderImpl.readBatch.ApplyFilterExpr");
         }
     }
 
-
-    // read vectors
+    // Completion is performed before readBatch(), so this path does not wait for
+    // I/O. WaitBuffer measures only acquisition of an already-ready chunk view.
+    // ColumnReader::read decodes directly into columnVectors; there is currently
+    // no separate post-decode copy, and Copy is emitted as an explicit zero-work
+    // phase so the summary documents that fact without double-counting Decode.
+    PROFILE_START("PixelsRecordReaderImpl.readBatch.ReadDataColumns");
     for (int i = 0; i < resultColumns.size(); i++)
     {
-        // TODO: Refer to Issue #564. Disable data skipping
-        //if(filterMask != nullptr) {
-        //    if(filterMask->isNone()) {
-        //        break;
-        //    }
-        //}
         // Skip the columns that calculate the filter mask, since they are already processed
         int index = curChunkBufferIndex.at(i);
         if (std::find(filterColumnIndex.begin(), filterColumnIndex.end(), index) != filterColumnIndex.end())
@@ -266,31 +338,69 @@ std::shared_ptr <VectorizedRowBatch> PixelsRecordReaderImpl::readBatch(bool reus
         }
         auto &encoding = curEncoding.at(i);
         auto &chunkIndex = curChunkIndex.at(i);
-        readers.at(i)->read(chunkBuffers.at(index), *encoding, curRowInRG, curBatchSize,
-                            postScript.pixelstride(), resultRowBatch->rowCount,
-                            columnVectors.at(i), *chunkIndex, filterMask);
+        PROFILE_START("PixelsRecordReaderImpl.readBatch.ReadDataColumns.WaitBuffer");
+        auto chunkBuffer = chunkBuffers.at(index);
+        PROFILE_END("PixelsRecordReaderImpl.readBatch.ReadDataColumns.WaitBuffer");
+        PROFILE_START("PixelsRecordReaderImpl.readBatch.ReadDataColumns.Decode");
+        readers.at(i)->read(chunkBuffer, encoding, curRowInRG, curBatchSize,
+                            postScript->pixelStride(), resultRowBatch->rowCount,
+                            columnVectors.at(i), chunkIndex, filterMask);
+        PROFILE_END("PixelsRecordReaderImpl.readBatch.ReadDataColumns.Decode");
     }
+    PROFILE_START("PixelsRecordReaderImpl.readBatch.ReadDataColumns.Copy");
+    // Intentionally empty: decoding materializes directly into columnVectors.
+    PROFILE_END("PixelsRecordReaderImpl.readBatch.ReadDataColumns.Copy");
+    PROFILE_END("PixelsRecordReaderImpl.readBatch.ReadDataColumns");
 
     // update current row index in the row group
+    PROFILE_START("PixelsRecordReaderImpl.readBatch.FinalizeBatch");
     curRowInRG += curBatchSize;
     resultRowBatch->rowCount += curBatchSize;
     // update row group index if current row index exceeds max row count in the row group
+    // std::cout<<"PixelsRecordReaderImpl:: curRGIdx: "<<curRGIdx<<
+    // " curRowInRG: "<<curRowInRG<<" curRGRowCount: "<<curRGRowCount<<std::endl;
+    // if (curRowInRG >= curRGRowCount)
+    // {
+    //     curRGIdx++;
+    //
+    //     // if (curRGIdx < targetRGNum)
+    //     // {
+    //     //     std::cout<<"curRGIdx: "<<curRGIdx<<" targetRGNum: "<<targetRGNum<<std::endl;
+    //     //     UpdateRowGroupInfo();
+    //     //     std::cout<<"curRowCount: "<<curRGRowCount<<std::endl;
+    //     // }
+    //     // else
+    //     // {
+    //     //     // if end of file, set result vectorized row batch endOfFile
+    //     //     endOfFile = true;
+    //     // }
+    //     curRowInRG = 0;
+    // }
+    PROFILE_END("PixelsRecordReaderImpl.readBatch.FinalizeBatch");
+    
+    PROFILE_END("PixelsRecordReaderImpl.readBatch.Total");
+    return resultRowBatch;
+}
+
+
+void PixelsRecordReaderImpl::nextRowGroup()
+{
     if (curRowInRG >= curRGRowCount)
     {
         curRGIdx++;
         if (curRGIdx < targetRGNum)
         {
+            std::cout<<"curRGIdx: "<<curRGIdx<<" targetRGNum: "<<targetRGNum<<std::endl;
             UpdateRowGroupInfo();
+            std::cout<<"curRowCount: "<<curRGRowCount<<std::endl;
         }
         else
         {
             // if end of file, set result vectorized row batch endOfFile
-            // TODO: set checkValid to false!
             endOfFile = true;
         }
         curRowInRG = 0;
     }
-    return resultRowBatch;
 }
 
 
@@ -305,7 +415,7 @@ void PixelsRecordReaderImpl::prepareRead()
     for (int i = 0; i < RGLen; i++)
     {
         includedRGs.at(i) = true;
-        includedRowNum += footer.rowgroupinfos(RGStart + i).numberofrows();
+        includedRowNum += footer->rowGroupInfos()->Get(RGStart + i)->numberOfRows();
     }
     targetRGs.clear();
     targetRGs.resize(RGLen);
@@ -325,6 +435,8 @@ void PixelsRecordReaderImpl::prepareRead()
     // read row group footers
     rowGroupFooters.clear();
     rowGroupFooters.resize(targetRGNum);
+    rowGroupFooterBuffers.clear();
+    rowGroupFooterBuffers.resize(targetRGNum);
     std::vector<bool> rowGroupFooterCacheHit;
     rowGroupFooterCacheHit.resize(targetRGNum);
 
@@ -352,39 +464,47 @@ void PixelsRecordReaderImpl::prepareRead()
         else
         {
             // cache miss, read from disk and put it into cache
-            const pixels::proto::RowGroupInformation &rowGroupInformation = footer.rowgroupinfos(rgId);
-            uint64_t footerOffset = rowGroupInformation.footeroffset();
-            uint64_t footerLength = rowGroupInformation.footerlength();
+            const pixels::fb::RowGroupInformation* rowGroupInformation = footer->rowGroupInfos()->Get(rgId);
+            uint64_t footerOffset = rowGroupInformation->footerOffset();
+            uint64_t footerLength = rowGroupInformation->footerLength();
             fis.push_back(i);
-            requestBatch.add(queryId, (int) footerOffset, (int) footerLength,ringIndex);
+            requestBatch.add(queryId, (int) footerOffset, (int) footerLength);
             rowGroupFooterCacheHit.at(i) = false;
         }
     }
     Scheduler *scheduler = SchedulerFactory::Instance()->getScheduler();
+    PROFILE_START("Pixels.Metadata.RowGroupFooterRead");
     auto bbs = scheduler->executeBatch(physicalReader, requestBatch, queryId);
+    PROFILE_END("Pixels.Metadata.RowGroupFooterRead");
     // TODO: the return value should be unique_ptr?
 
     for (int i = 0; i < bbs.size(); i++)
     {
         if (!rowGroupFooterCacheHit.at(i))
         {
-            auto parsed = std::make_shared<pixels::proto::RowGroupFooter>();
-            parsed->ParseFromArray(bbs[i]->getPointer(), (int) bbs[i]->size());
+            const pixels::fb::RowGroupFooter* parsed =
+                flatbuffers::GetRoot<pixels::fb::RowGroupFooter>((bbs[i]->getPointer()));
             rowGroupFooters.at(fis[i]) = parsed;
+            // Keep the ByteBuffer alive so the FlatBuffer pointer stays valid.
+            rowGroupFooterBuffers.at(fis[i]) = bbs[i];
             if (footerCache != nullptr)
             {
-                footerCache->putRGFooter(rgCacheIds[fis[i]], parsed);
+                // Pass the buffer to the cache so the pointer stays valid after
+                // this reader is destroyed.
+                footerCache->putRGFooter(rgCacheIds[fis[i]], bbs[i], parsed);
             }
         }
     }
 
-    bbs.clear();
+    // Do NOT clear bbs here — rowGroupFooterBuffers now owns the references
+    // we need. bbs itself will be destroyed at end of scope.
     resultColumnsEncoded.clear();
     resultColumnsEncoded.resize(includedColumnNum);
 
     curEncoding.resize(resultColumns.size());
     curChunkBufferIndex.resize(resultColumns.size());
     curChunkIndex.resize(resultColumns.size());
+    // std::cout<<"PreparedRead:"<<std::endl;
     UpdateRowGroupInfo();
 }
 
@@ -393,14 +513,14 @@ void PixelsRecordReaderImpl::asyncReadComplete(int requestSize)
     if (ConfigFactory::Instance().boolCheckProperty("localfs.enable.async.io")
         && asyncReadRequestNum >= requestSize)
     {
-        if (ConfigFactory::Instance().getProperty("localfs.async.lib") == "iouring")
+        auto asyncLib = ConfigFactory::Instance().getProperty("localfs.async.lib");
+        if (asyncLib == "iouring" || asyncLib == "spdk")
         {
             auto localReader = std::static_pointer_cast<PhysicalLocalReader>(physicalReader);
-            auto ringIndexCountMap=localReader->getRingIndexCountMap();
-            localReader->readAsyncComplete(ringIndexCountMap,localReader->getRingIndexes());
+            localReader->readAsyncComplete(requestSize);
             asyncReadRequestNum -= requestSize;
         }
-        else if (ConfigFactory::Instance().getProperty("localfs.async.lib") == "aio")
+        else if (asyncLib == "aio")
         {
             throw InvalidArgumentException(
                     "PhysicalLocalReader::readAsync: We don't support aio for our async read yet.");
@@ -415,44 +535,73 @@ std::shared_ptr <PixelsBitMask> PixelsRecordReaderImpl::getFilterMask()
     return filterMask;
 }
 
-bool PixelsRecordReaderImpl::read()
+pixels::SelectiveBufferScheduler::Demand PixelsRecordReaderImpl::prepareBufferDemand()
 {
     if (!everPrepareRead)
     {
         prepareRead();
     }
+    if (targetRGNum != 1)
+    {
+        throw InvalidArgumentException("selective buffer requires exactly one row group per file");
+    }
+
+    pixels::SelectiveBufferScheduler::Demand demand;
+    auto direct = DynamicBufferPool::GetDirectIoLib();
+    const bool aligned = ConfigFactory::Instance().boolCheckProperty("localfs.enable.direct.io");
+    for (const auto *rg : rowGroupFooters)
+    {
+        for (int col : targetColumns)
+        {
+            const auto *chunk = rg->rowGroupIndexEntry()->columnChunkIndexEntries()->Get(col);
+            const uint64_t offset = chunk->chunkOffset();
+            const uint64_t length = chunk->chunkLength();
+            const uint64_t bytes = aligned && direct
+                ? direct->blockEnd(offset + length) - direct->blockStart(offset)
+                : length;
+            demand[col] = std::max(demand[col], bytes);
+        }
+    }
+    return demand;
+}
+
+bool PixelsRecordReaderImpl::read()
+{
+    PROFILE_START("PixelsRecordReaderImpl.read.Total");
+    
+    if (!everPrepareRead)
+    {
+        PROFILE_START("PixelsRecordReaderImpl.read.PrepareRead");
+        prepareRead();
+        PROFILE_END("PixelsRecordReaderImpl.read.PrepareRead");
+    }
 
     everRead = true;
 
     // read chunk offset and length of each target column chunks
-
-    // TODO: this should remove later
+    PROFILE_START("PixelsRecordReaderImpl.read.PrepareChunks");
     chunkBuffers.clear();
     chunkBuffers.resize(includedColumns.size());
     std::vector <ChunkId> diskChunks;
     diskChunks.reserve(targetColumns.size());
 
-
-    // TODO: support cache read
-
-    const pixels::proto::RowGroupIndex &rowGroupIndex =
-            rowGroupFooters[curRGIdx]->rowgroupindexentry();
+    const pixels::fb::RowGroupIndex* rowGroupIndex =
+            rowGroupFooters[curRGIdx]->rowGroupIndexEntry();
     for (int colId: targetColumns)
     {
-        const pixels::proto::ColumnChunkIndex &chunkIndex =
-                rowGroupIndex.columnchunkindexentries(colId);
-        if (!chunkIndex.littleendian())
+        const pixels::fb::ColumnChunkIndex* chunkIndex =
+                rowGroupIndex->columnChunkIndexEntries()->Get(colId);
+        if (!chunkIndex->littleEndian())
         {
             throw InvalidArgumentException("Pixels C++ reader only supports little endianness. ");
         }
-        ChunkId chunk(curRGIdx, colId, chunkIndex.chunkoffset(), chunkIndex.chunklength());
+        ChunkId chunk(curRGIdx, colId, chunkIndex->chunkOffset(), chunkIndex->chunkLength());
         diskChunks.emplace_back(chunk);
     }
-
+    PROFILE_END("PixelsRecordReaderImpl.read.PrepareChunks");
 
     if (!diskChunks.empty())
     {
-        // std::lock_guard<std::mutex> lock(mutex_);
         RequestBatch requestBatch((int) diskChunks.size());
         Scheduler *scheduler = SchedulerFactory::Instance()->getScheduler();
         std::vector <uint32_t> colIds;
@@ -460,42 +609,206 @@ bool PixelsRecordReaderImpl::read()
         for (int i = 0; i < diskChunks.size(); i++)
         {
             ChunkId chunk = diskChunks.at(i);
-            requestBatch.add(queryId, chunk.offset, (int) chunk.length, ::BufferPool::GetBufferId());
             colIds.emplace_back(chunk.columnId);
             bytes.emplace_back(chunk.length);
         }
+        
+        // Check buffer pool mode
+        bool useStaticBufferPool = false;
+        bool useDynamicBuffer    = false;
+        std::string asyncLib;
+        try { asyncLib = ConfigFactory::Instance().getProperty("localfs.async.lib"); } catch (...) {}
 
-        std::thread::id thread_id=std::this_thread::get_id();
-        auto columnNames=fileSchema->getFieldNames();
-        ::BufferPool::Initialize(colIds, bytes, columnNames);
-        ::DirectUringRandomAccessFile::RegisterBufferFromPool(colIds);
-        std::vector <std::shared_ptr<ByteBuffer>> originalByteBuffers;
-        std::vector<int> ring_col;
-        for (int i = 0; i < colIds.size(); i++)
-        {
-            auto colId = colIds.at(i);
-            auto byte=bytes.at(i);
-            auto currentBufferEntry=::BufferPool::GetBuffer(colId,byte,columnNames[colId]);
-            originalByteBuffers.emplace_back(currentBufferEntry);
-            requestBatch.getRequest(i).ringIndex=::BufferPool::getRingIndex(colId);
-            if (currentBufferEntry->size()-requestBatch.getRequest(i).length<=4096) {
-                std::cout<<"i:"<<i<<" ringIndex:"<<requestBatch.getRequest(i).ringIndex<<
-                    " colId:"<<colId<<" byte:"<<byte<<" currentBuffer size"<<currentBufferEntry->size()<<
-                " requestBatch.length"<<requestBatch.getRequest(i).length<<
-                    " columnNames:"<<columnNames[colId]<<std::endl;
-                throw InvalidArgumentException("PixelsRecordReaderImpl:read 临界区");
-            }
-
-            if (requestBatch.getRequest(i).ringIndex !=0) {
-                requestBatch.getRequest(i).bufferId=0;
-                ring_col.emplace_back(i);
-            }
+        try {
+            useStaticBufferPool = ConfigFactory::Instance().boolCheckProperty("pixel.enable.globalStaticBytebuffer");
+        } catch (...) {
+            useStaticBufferPool = false;
         }
 
-        // ::BufferPool::PrintStats();
+        try {
+            useDynamicBuffer = ConfigFactory::Instance().boolCheckProperty("pixels.enable.dynamic.buffer");
+        } catch (...) {
+            useDynamicBuffer = false;
+        }
 
-           auto byteBuffers = scheduler->executeBatch(
+        std::vector <std::shared_ptr<ByteBuffer>> originalByteBuffers;
+
+        PROFILE_START("PixelsRecordReaderImpl.read.AllocateBuffers");
+
+#ifdef PIXELS_ENABLE_SPDK
+        if (asyncLib == "spdk") {
+            // ========== SPDK DMA Buffer Pool ==========
+            // SpdkBufferPool holds spdk_dma_malloc'd buffers; readAsync uses
+            // them directly as the NVMe DMA target (zero-copy, no memcpy).
+            SpdkBufferPool::Initialize(colIds, bytes, fileSchema->getFieldNames());
+            if (pixelsBufferIdx == -1)
+                pixelsBufferIdx = SpdkBufferPool::GetCurrentBufferIdx();
+
+            for (int i = 0; i < (int)colIds.size(); i++) {
+                auto colId = colIds.at(i);
+                originalByteBuffers.emplace_back(
+                    SpdkBufferPool::GetBufferAt(colId, pixelsBufferIdx));
+                requestBatch.add(queryId,
+                                 diskChunks.at(i).offset,
+                                 (int)diskChunks.at(i).length,
+                                 static_cast<int64_t>(i));
+            }
+            // ==========================================
+        } else
+#endif // PIXELS_ENABLE_SPDK
+        if (useStaticBufferPool && pixels::ThreadContext::HasContext()) {
+            // ========== Global Static BufferPool Implementation ==========
+            // Buffers and ring are already pre-allocated and pre-registered
+            // Just get buffer from GlobalStaticBufferPool
+            
+            int threadId = pixels::ThreadContext::GetThreadId();
+            auto& pool = GlobalStaticBufferPool::Instance();
+            
+            for (int i = 0; i < colIds.size(); i++)
+            {
+                auto colId = colIds.at(i);
+                auto offset = diskChunks.at(i).offset;
+                auto length = diskChunks.at(i).length;
+                
+                // Get column name from field names
+                std::string columnName = fileSchema->getFieldNames()[colId];
+                
+                // For double buffering, we use bufferIdx 0 or 1 alternately
+                // TODO: Implement proper double buffering logic if needed
+                int bufferIdx = ::BufferPool::GetNextBufferIdx(); // Simple implementation: always use buffer 0
+                if (ShouldPrintBufferIdxDebug(threadId))
+                {
+                    std::cout << "[BufferIdxDebug] reader_read"
+                              << " file=" << fileName
+                              << " thread=" << threadId
+                              << " column=" << columnName
+                              << " bufferIdx=" << bufferIdx
+                              << " currBufferIdx=" << ::BufferPool::GetCurrentBufferIdx()
+                              << " nextBufferIdx=" << ::BufferPool::GetNextBufferIdx()
+                              << " offset=" << offset
+                              << " length=" << length
+                              << std::endl;
+                }
+                
+                // Get pre-allocated buffer from global pool
+                auto buffer = pool.GetBuffer(columnName, threadId, bufferIdx);
+                originalByteBuffers.emplace_back(buffer);
+                
+                // Get buffer index in the registered array (for io_uring_prep_read_fixed)
+                int registeredBufferIndex = pool.GetBufferIndex(columnName, threadId, bufferIdx);
+                
+                requestBatch.add(queryId, offset, (int) length,columnName, registeredBufferIndex);
+            }
+            // ==========================================================
+        } else if (useDynamicBuffer) {
+            // ========== Dynamic BufferPool Implementation ==========
+            // Initialize DirectUringRandomAccessFileDynamic with io_uring and buffer pool
+            DirectUringRandomAccessFileDynamic::Initialize(4096, 1024);
+            
+            // Get DirectIoLib for alignment calculation
+            auto directIoLib = DynamicBufferPool::GetDirectIoLib();
+            
+            // Allocate buffers for each column dynamically
+            for (int i = 0; i < colIds.size(); i++)
+            {
+                auto colId = colIds.at(i);
+                auto offset = diskChunks.at(i).offset;
+                auto length = diskChunks.at(i).length;
+                
+                // Calculate aligned buffer size for Direct I/O
+                uint64_t bufferSize;
+                if (ConfigFactory::Instance().boolCheckProperty("localfs.enable.direct.io") && directIoLib != nullptr) {
+                    // For Direct I/O, we need to align to block boundaries
+                    uint64_t fileOffsetAligned = directIoLib->blockStart(offset);
+                    bufferSize = directIoLib->blockEnd(offset + length) - fileOffsetAligned;
+                } else {
+                    bufferSize = length;
+                }
+
+                // if we specify a fixed-size buffer
+                if (ConfigFactory::Instance().boolCheckProperty("pixel.bufferpool.fixedSize"))
+                {
+                    bufferSize = std::stoi(ConfigFactory::Instance().getProperty("pixel.bufferpool.bufferpoolSize"));
+                }
+                // Allocate buffer for this column if not already allocated
+
+                auto buffer = DynamicBufferPool::GetBuffer(colId);
+                if (buffer == nullptr) {
+                    buffer = DynamicBufferPool::AllocateBuffer(colId, bufferSize);
+                } else if (buffer->size() < bufferSize) {
+                    // Grow buffer if needed
+                    buffer = DynamicBufferPool::GrowBuffer(colId, bufferSize);
+                    if (ConfigFactory::Instance().boolCheckProperty("pixel.bufferpool.fixedSize"))
+                    {
+                        throw InvalidArgumentException("We can not grow buffer when the bufferSize is fixed.");
+                    }
+                }
+
+                
+                originalByteBuffers.emplace_back(buffer);
+                
+                // Get buffer slot index for io_uring fixed buffer read
+                int slotIndex = DynamicBufferPool::GetBufferSlotIndex(colId);
+                requestBatch.add(queryId, offset, (int) length, slotIndex);
+            }
+            // ==========================================================
+        } else {
+            // ========== Static BufferPool Implementation ==========
+            // Check if we should use fixed buffers
+            bool useFixedBuffer = true;
+            try {
+                useFixedBuffer = ConfigFactory::Instance().boolCheckProperty("localfs.iouring.use.fixed.buffer");
+            } catch (...) {
+                useFixedBuffer = true; // default to fixed buffer for backward compatibility
+            }
+
+            // Pin the buffer set index for this file's lifetime.  BufferPool::Switch() may be
+            // called between row groups (double-buffer file-level prefetch), but all row groups
+            // of the same file must read into / from the same buffer set.
+            if (pixelsBufferIdx == -1)
+            {
+                pixelsBufferIdx = ::BufferPool::GetCurrentBufferIdx();
+            }
+
+            if (useFixedBuffer) {
+                // Use fixed buffer version - requires buffer registration
+                ::DirectUringRandomAccessFile::Initialize();
+                ::BufferPool::Initialize(colIds, bytes, fileSchema->getFieldNames());
+                if (!ConfigFactory::Instance().boolCheckProperty("pixel.enable.globalStaticBytebuffer"))
+                {
+                    ::DirectUringRandomAccessFile::RegisterBufferFromPool(colIds);
+                }
+
+                for (int i = 0; i < colIds.size(); i++)
+                {
+                    auto colId = colIds.at(i);
+                    originalByteBuffers.emplace_back(::BufferPool::GetBufferAt(colId, pixelsBufferIdx));
+                    requestBatch.add(queryId, diskChunks.at(i).offset, (int) diskChunks.at(i).length,
+                                     ::BufferPool::GetBufferIdAt(i, pixelsBufferIdx));
+                }
+            } else {
+                // Use non-fixed buffer version - no buffer registration needed
+                ::DirectUringRandomAccessFileNonFixed::Initialize();
+                ::BufferPool::Initialize(colIds, bytes, fileSchema->getFieldNames());
+                // No need to register buffers for non-fixed version
+
+                for (int i = 0; i < colIds.size(); i++)
+                {
+                    auto colId = colIds.at(i);
+                    originalByteBuffers.emplace_back(::BufferPool::GetBufferAt(colId, pixelsBufferIdx));
+                    // For non-fixed buffers, the index parameter is ignored but we still pass it for API compatibility
+                    requestBatch.add(queryId, diskChunks.at(i).offset, (int) diskChunks.at(i).length,
+                                     ::BufferPool::GetBufferIdAt(i, pixelsBufferIdx));
+                }
+            }
+            // ==========================================================
+        }
+        PROFILE_END("PixelsRecordReaderImpl.read.AllocateBuffers");
+
+        PROFILE_START("PixelsRecordReaderImpl.read.ExecuteIO");
+        auto byteBuffers = scheduler->executeBatch(
             physicalReader, requestBatch, originalByteBuffers, queryId);
+        PROFILE_END("PixelsRecordReaderImpl.read.ExecuteIO");
 
         if(ConfigFactory::Instance().boolCheckProperty("localfs.enable.async.io")
             && originalByteBuffers.size() > 0)
@@ -503,18 +816,21 @@ bool PixelsRecordReaderImpl::read()
             asyncReadRequestNum += diskChunks.size();
         }
 
+        PROFILE_START("PixelsRecordReaderImpl.read.AssignBuffers");
         for (int index = 0; index < diskChunks.size(); index++)
         {
             ChunkId chunk = diskChunks.at(index);
             std::shared_ptr <ByteBuffer> bb = byteBuffers.at(index);
             uint32_t colId = chunk.columnId;
-
             if (bb != nullptr)
             {
                 chunkBuffers.at(colId) = bb;
             }
         }
+        PROFILE_END("PixelsRecordReaderImpl.read.AssignBuffers");
     }
+    
+    PROFILE_END("PixelsRecordReaderImpl.read.Total");
     return true;
 
 }
@@ -538,7 +854,7 @@ std::shared_ptr <TypeDescription> PixelsRecordReaderImpl::getResultSchema()
 std::shared_ptr <VectorizedRowBatch> PixelsRecordReaderImpl::createEmptyEOFRowBatch(int size)
 {
     auto emptySchema = TypeDescription::createSchema(
-            std::vector < std::shared_ptr < pixels::proto::Type >> ());
+            std::span<const pixels::fb::Type*>());
     auto emptyRowBatch = emptySchema->createRowBatch(0);
     emptyRowBatch->rowCount = 0;
     return emptyRowBatch;
@@ -563,6 +879,7 @@ void PixelsRecordReaderImpl::close()
     }
     readers.clear();
     rowGroupFooters.clear();
+    rowGroupFooterBuffers.clear();
     includedColumnTypes.clear();
     endOfFile = true;
 }

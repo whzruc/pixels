@@ -53,8 +53,8 @@ ConfigFactory::ConfigFactory()
     {
         pixelsHome += "/";
     }
-    std::ifstream infile(pixelsHome + "cpp/etc/pixels-cpp.properties");
-    std::cout << "pixels properties file is " << pixelsHome + "cpp/etc/pixels-cpp.properties" << std::endl;
+    std::ifstream infile(pixelsHome + "etc/pixels-cpp.properties");
+    std::cout << "pixels properties file is " << pixelsHome + "etc/pixels-cpp.properties" << std::endl;
     std::string line;
     while (std::getline(infile, line))
     {
@@ -98,6 +98,24 @@ bool ConfigFactory::boolCheckProperty(std::string key)
     {
         throw InvalidArgumentException("ConfigFactory: The key is not boolean type.");
     }
+}
+
+bool ConfigFactory::getBoolProperty(const std::string &key, bool defaultValue)
+{
+    auto it = prop.find(key);
+    if (it == prop.end())
+    {
+        return defaultValue;
+    }
+    if (it->second == "true")
+    {
+        return true;
+    }
+    if (it->second == "false")
+    {
+        return false;
+    }
+    return defaultValue;
 }
 
 std::string ConfigFactory::getPixelsDirectory()

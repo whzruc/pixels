@@ -1,0 +1,8 @@
+{
+  "results": "/home/whz/test/pixels/cpp/testcase/buffer-pool/results/selective-v1-16ssd-\n    full-20260909-222223",
+  "queries": 21,
+  "modes": 7,
+  "timed_runs": 441,
+  "perf_profiles": 147,
+  "unknown_stack_weight_median_percent": 88.8138769937924
+}

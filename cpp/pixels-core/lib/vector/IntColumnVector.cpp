@@ -39,7 +39,7 @@ void IntColumnVector::close()
     if (!closed)
     {
         ColumnVector::close ();
-        if (encoding && intVector != nullptr)
+        if (intVector != nullptr && ownsData)
         {
             free (intVector);
         }
@@ -49,11 +49,11 @@ void IntColumnVector::close()
 
 void IntColumnVector::print(int rowCount)
 {
-    throw InvalidArgumentException ("not support print longcolumnvector.");
-    //    for(int i = 0; i < rowCount; i++) {
-    //        std::cout<<longVector[i]<<std::endl;
-    //		std::cout<<intVector[i]<<std::endl;
-    //    }
+    // throw InvalidArgumentException ("not support print longcolumnvector.");
+        for(int i = 0; i < rowCount; i++) {
+            // std::cout<<longVector[i]<<std::endl;
+    		std::cout<<intVector[i]<<std::endl;
+        }
 }
 
 IntColumnVector::~IntColumnVector()
@@ -128,7 +128,8 @@ void IntColumnVector::ensureSize(uint64_t size, bool preserveData)
         {
             std::copy (oldVector, oldVector + length, intVector);
         }
-        delete[] oldVector;
+        if (ownsData) free(oldVector);
+        ownsData = true;
         memoryUsage += (long) sizeof (int) * (size - length);
         resize (size);
     }

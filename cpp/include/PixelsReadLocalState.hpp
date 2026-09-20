@@ -32,6 +32,11 @@
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include "PixelsReader.h"
 #include "reader/PixelsRecordReader.h"
+#include "physical/GlobalByteBufferPool.h"
+#include "physical/natives/DirectUringRandomAccessFileDynamic.h"
+#include "physical/SelectiveBufferScheduler.h"
+#include "utils/ConfigFactory.h"
+#include <iostream>
 
 namespace duckdb
 {
@@ -50,6 +55,21 @@ namespace duckdb
             vectorizedRowBatch = nullptr;
             currReader = nullptr;
             nextReader = nullptr;
+            ring=nullptr;
+            prefetchRing=nullptr;
+            threadId=0;
+            shouldPrintProfileSummary = false;
+            // Cached config values — read once at init, not per-chunk.
+            cfgDoubleBuffer = false;
+            cfgDynamicBuffer = false;
+            cfgSpdk = false;
+            cfgSelective = false;
+        }
+
+        ~PixelsReadLocalState()
+        {
+            // Statistics are now printed in PixelsScanFunction.cpp
+            // when the last thread completes
         }
 
         std::shared_ptr <PixelsRecordReader> currPixelsRecordReader;
@@ -68,6 +88,18 @@ namespace duckdb
         idx_t next_batch_index;
         std::string next_file_name;
         std::string curr_file_name;
+        struct io_uring* ring;
+        struct io_uring* prefetchRing;
+        int threadId;
+        bool shouldPrintProfileSummary;
+        // Config values cached at thread-init time to avoid per-chunk map lookups.
+        bool cfgDoubleBuffer;
+        bool cfgDynamicBuffer;
+        bool cfgSpdk;
+        // Used only by the separate selective state-transition path.
+        bool cfgSelective;
+        size_t selectiveWorker = 0;
+        pixels::SelectiveBufferScheduler::Task selectiveTask{};
     };
 
 }

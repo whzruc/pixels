@@ -1,0 +1,368 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{url}
+
+\begin{document}
+
+\title{Decoupling Storage I/O and Memory Management for\
+High-Throughput Analytical Scans}
+
+% TODO: replace the anonymous block with the final author list after review.
+\author{\IEEEauthorblockN{Anonymous Authors}
+\IEEEauthorblockA{Paper under preparation for ICDE}}
+
+\maketitle
+
+\begin{abstract}
+Modern NVMe arrays expose enough parallelism that an analytical scan can be
+limited by software overhead, buffer ownership, and interference between I/O
+completion and decoding rather than by raw device bandwidth.  We study this
+problem in Pixels, a columnar storage engine integrated with DuckDB.  Its
+current scan path supports synchronous reads, \texttt{io\_uring}, and an SPDK
+prototype, but backend selection, asynchronous completion, and buffer lifetime
+are spread across the format and physical layers.  We present a format-neutral
+I/O and memory-management architecture that separates read planning, backend
+sessions, reusable buffer leases, and file-level prefetch pipelines.  The same
+protocol accommodates blocking \texttt{pread}, interrupt-driven
+\texttt{io\_uring}, and polling-based SPDK without exposing file descriptors,
+registered-buffer indices, queue pairs, or logical block addresses to a format
+decoder.  An initial implementation includes reusable dynamic and static
+buffer pools, single- and double-buffered scans, a Parquet adapter, and
+instrumentation that separates I/O waiting from decoding.  Preliminary results
+on a 24-NVMe server show that double buffering reduces query time by
+6.0--10.0\% for \texttt{io\_uring} and 9.7--17.9\% for SPDK across 12--48
+workers.  At 48 workers, however, it increases cache misses by 7.1\% while
+instructions remain nearly unchanged, demonstrating that hiding I/O can shift
+the bottleneck to memory-intensive decoding.  These observations motivate
+backend-aware resource control and asynchronous metadata pipelines rather than
+unbounded scan concurrency.
+\end{abstract}
+
+\begin{IEEEkeywords}
+analytical databases, asynchronous I/O, buffer management, NVMe, io\_uring,
+SPDK, columnar storage
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+NVMe devices and multi-SSD arrays have changed the balance of analytical query
+execution.  A scan operator must keep many devices busy while decoding and
+materializing columns, yet every additional worker also creates I/O queues,
+buffers, completion work, and pressure on shared caches and memory bandwidth.
+Optimizing either storage or computation in isolation can therefore move, and
+occasionally worsen, the end-to-end bottleneck.
+
+Pixels is a columnar storage system whose C++ reader is exposed as a DuckDB
+table function.  The reader supports direct synchronous I/O, asynchronous
+\texttt{io\_uring}, file-level double buffering, and an experimental SPDK
+backend.  This breadth makes it a useful case study, but it also reveals a
+common systems problem: backend details have leaked into the format reader.
+Backend selection occurs in several layers; a buffer identifier may double as
+an \texttt{io\_uring} registration index; and metadata still follows a
+synchronous chain even when column data is prefetched asynchronously.
+
+This paper asks three questions.  First, what is the smallest interface that
+can express the different ownership and completion semantics of \texttt{pread},
+\texttt{io\_uring}, and SPDK?  Second, how should buffers be reused without
+letting a backend overwrite memory still referenced by a decoder?  Third, when
+I/O and decoding overlap, which resource becomes the next scalability limit?
+
+We make the following contributions:
+
+\begin{itemize}
+  \item We identify four sources of coupling in an end-to-end columnar scan:
+  backend selection, asynchronous capability, buffer registration, and buffer
+  lifetime.
+  \item We design a format-neutral I/O manager organized around backend
+  sessions, explicit read batches, owned buffer views, and a bounded prefetch
+  pipeline.
+  \item We implement the major mechanisms in the Pixels C++ and DuckDB paths,
+  including dynamic and static buffer reuse, double buffering, CPU affinity,
+  profiling, an \texttt{io\_uring}-based Parquet path, and an SPDK prototype.
+  \item We present preliminary evidence that eliminating visible completion
+  waits does not eliminate resource contention: at high concurrency it exposes
+  cache- and memory-bound decoding as the dominant cost.
+\end{itemize}
+
+This draft deliberately separates measured observations from proposed work.
+All numbers in Section~\ref{sec:evaluation} are preliminary and must be rerun
+from a single build before submission.
+
+\section{Background and Motivation}
+
+\subsection{The Pixels Scan Path}
+
+A DuckDB worker obtains a file, constructs a Pixels reader, reads metadata,
+plans column ranges, issues physical reads, and decodes the returned bytes into
+column vectors.  The current physical path is approximately:
+
+\begin{verbatim}
+PixelsRecordReader -> RequestBatch -> Scheduler
+ -> PhysicalLocalReader -> RandomAccessFile backend
+\end{verbatim}
+
+Column data can be submitted in batches.  With double buffering, a worker
+decodes the current file while the next file is in flight.  Metadata is
+different: locating column chunks requires a strict sequence,
+
+\begin{equation}
+\textit{TailOffset} \rightarrow \textit{FileTail}
+\rightarrow \textit{RowGroupFooter} \rightarrow \textit{ColumnChunks}.
+\end{equation}
+
+The first three stages are currently synchronous.  Consequently, asynchronous
+column reads do not remove file-boundary stalls, and SPDK workers can busy-poll
+for small metadata requests.
+
+\subsection{Why One Interface Is Difficult}
+
+The backends differ in more than their submission call.  \texttt{pread} uses a
+file offset and completes inline.  \texttt{io\_uring} uses submission and
+completion queues and may register buffers.  SPDK uses DMA-capable memory,
+per-thread queue pairs, polling, and a file-to-LBA mapping.  A useful common
+interface must preserve these differences behind a session while providing the
+same lifetime and error semantics above it.
+
+\subsection{The Overlap Paradox}
+
+Double buffering should hide I/O latency, but it also allows more workers to
+decode simultaneously.  In our preliminary 48-worker run, visible
+\texttt{io\_uring} completion waiting fell by 98.3\%, yet accumulated decoding
+time rose by 8.0\%.  Instructions increased by only 0.15\%, whereas cycles and
+cache misses increased by 4.7\% and 7.1\%, respectively.  Thus, the system did
+not decode more data; the same work became more expensive under contention.
+
+\section{Design}
+
+\subsection{Layered Architecture}
+
+Our target architecture has four layers.  A \emph{format adapter} converts
+metadata into read ranges.  An \emph{I/O manager} selects a backend and creates
+a worker-scoped session.  A \emph{buffer provider} allocates reusable memory
+that satisfies alignment, registration, and DMA requirements.  Finally, a
+\emph{prefetch pipeline} controls the number and lifetime of in-flight slots.
+Pixels and Parquet keep independent decoders but share these lower layers.
+
+\begin{figure}[t]
+\centering
+\fbox{\parbox{0.92\columnwidth}{\centering
+Pixels Adapter \quad Parquet Adapter\\
+$\downarrow$\\
+I/O Manager $\rightarrow$ Prefetch Pipeline\\
+$\downarrow$\hspace{1.3cm}$\downarrow$\\
+Buffer Provider \quad I/O Session\\
+\hfill Pread $\mid$ io\_uring $\mid$ SPDK}}
+\caption{Format-neutral I/O and memory-management architecture.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Owned Buffers and Views}
+
+A \emph{buffer allocation} is the sole owner of a memory region and carries
+capacity, alignment, and DMA properties.  A \emph{buffer lease} represents its
+temporary use by a pipeline slot.  A read result returns an immutable view that
+retains shared ownership of the allocation.  Therefore, a pool cannot recycle
+or overwrite the region while an I/O batch or decoder still references it.
+Registration tokens and SPDK DMA metadata remain private to the session.
+
+This ownership rule replaces implicit relationships among raw pointers,
+buffer-pool entries, and backend request objects.  It also supports different
+providers: ordinary aligned allocations, dynamically sized reusable buffers,
+pre-sized static rings, and SPDK huge-page allocations.
+
+\subsection{Read Batches and Sessions}
+
+A read range contains a request identifier, file offset, length, target
+allocation, and target offset.  A session submits one or more ranges and
+returns a batch with the following state machine:
+
+\begin{verbatim}
+Created -> Submitted -> Completing -> Completed
+                    \-> Failed
+Submitted -> Cancelling -> Cancelled | Completed
+\end{verbatim}
+
+After submission, the session retains every target until all commands have
+completed or have been drained after failure.  Completion order is associated
+through request identifiers rather than queue order.  Short reads are errors
+unless explicitly permitted.  A blocking backend may return a batch already in
+the completed state, preserving the caller protocol without pretending that
+all implementations are asynchronous.
+
+\subsection{Bounded Prefetch}
+
+The prefetch pipeline maintains current and next slots.  Each slot owns its
+file handle, batch, leases, and decoder-visible views.  The next slot may be
+submitted while the current slot is decoded, but it cannot be promoted until
+completion.  The current slot cannot be reclaimed until its last decoder view
+is released.  The number and total capacity of slots are bounded to prevent
+prefetch from turning device parallelism into uncontrolled memory pressure.
+
+\subsection{Asynchronous Metadata}
+
+We propose a metadata coordinator that advances a bounded window of files
+through three asynchronous stages: tail-offset reads, file-tail reads, and
+row-group-footer reads.  Ready readers enter a worker queue.  A query-level
+single-flight cache prevents concurrent misses from issuing duplicate reads.
+For SPDK, metadata uses DMA buffers and the same completion infrastructure as
+column data; for \texttt{io\_uring}, requests are batched into SQEs.  This is a
+design under implementation, not part of the preliminary performance claims.
+
+\section{Implementation Status}
+
+The prototype is implemented in C++ and integrated with DuckDB.  Table
+\ref{tab:status} distinguishes completed mechanisms from work needed for a
+submission-quality artifact.
+
+\begin{table}[t]
+\caption{Prototype status at the time of this draft.}
+\label{tab:status}
+\centering
+\begin{tabular}{p{0.53\columnwidth}p{0.32\columnwidth}}
+\toprule
+Component & Status \\
+\midrule
+Pixels vectorized reader/writer and DuckDB scan & Implemented \\
+Direct synchronous and \texttt{io\_uring} I/O & Implemented \\
+Dynamic/global static buffer pools & Implemented \\
+Single/double-buffer scan modes & Implemented \\
+Column-vector reuse and CPU affinity & Implemented \\
+Parquet \texttt{io\_uring} adapter and profiling & Prototype \\
+SPDK raw-block backend and DMA pool & Prototype \\
+Unified public manager/session API & Design; partial mechanisms \\
+Cross-file asynchronous metadata & Planned \\
+Shared SPDK completion pollers & Planned \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The \texttt{io\_uring} implementation includes fixed and non-fixed buffer
+variants.  The global static pool is initialized from collected column-size
+information; the dynamic pool adapts allocation sizes at runtime.  The Parquet
+adapter preloads column regions into Pixels-managed buffers and exposes them
+through an Arrow random-access-file adapter.  Profilers report accumulated
+thread time for I/O submission, completion, metadata, decoding, conversion,
+and file transitions.  Accumulated thread time is never reported as wall time.
+
+The SPDK path maps immutable Pixels files to raw device extents and reads into
+DMA-capable memory.  This prototype currently requires offline mapping and
+environment setup; portability, fragmented files, and recovery behavior need
+additional engineering before it can be presented as a general backend.
+
+\section{Preliminary Evaluation}
+\label{sec:evaluation}
+
+\subsection{Methodology}
+
+The current dataset uses ClickBench query Q24 on a server with 24 Samsung
+PM9A3 NVMe SSDs and 12, 24, or 48 scan workers.  We compare single and double
+buffering under \texttt{io\_uring} and SPDK.  Wall time, accumulated stage
+time, and Linux \texttt{perf} counters are collected.  The SPDK and
+\texttt{io\_uring} observations were obtained on different dates; they are
+useful for identifying trends but not for declaring a winner between backends.
+
+\begin{table}[t]
+\caption{Preliminary Q24 wall time in seconds.}
+\label{tab:wall}
+\centering
+\begin{tabular}{rrrrr}
+\toprule
+Workers & \multicolumn{2}{c}{io\_uring} & \multicolumn{2}{c}{SPDK} \\
+& Single & Double & Single & Double \\
+\midrule
+12 & 148.90 & 133.97 & 145.67 & 119.55 \\
+24 & 77.55  & 70.33  & 74.95  & 64.01  \\
+48 & 48.81  & 45.89  & 50.79  & 45.87  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Double Buffering Hides Completion Wait}
+
+Table~\ref{tab:wall} shows that double buffering improves wall time at all
+tested worker counts.  The gain decreases as concurrency grows: 10.0\%, 9.3\%,
+and 6.0\% for \texttt{io\_uring}; and 17.9\%, 14.6\%, and 9.7\% for SPDK.  In
+the 48-worker \texttt{io\_uring} case, accumulated CQE waiting falls from
+266.06 to 4.64 thread-seconds.  In the corresponding historical SPDK runs,
+asynchronous completion polling falls from roughly 336 to 7.55 thread-seconds.
+
+\subsection{Decoding Becomes the Bottleneck}
+
+At 48 workers, \texttt{io\_uring} double buffering reduces context switches by
+92.6\%, but increases task-clock by 6.8\% and decoding time by 8.0\%.
+Instructions are stable, while cache misses rise from 14.006 to 15.002 billion.
+This supports a resource-shift interpretation: removing blocked workers
+increases the number of simultaneous decoders, enlarges the active working set,
+and raises cache and memory-system contention.
+
+\subsection{Synchronous Metadata Remains Visible}
+
+At 48 workers, synchronous metadata accounts for 43.91 accumulated
+thread-seconds in the \texttt{io\_uring} single-buffer run and 141.36 in the
+SPDK single-buffer run.  About 96 seconds of the latter is synchronous SPDK
+polling.  These values are sums across workers and cannot be subtracted from
+query wall time.  They nevertheless identify metadata completion as a source
+of wasted CPU and motivate the staged pipeline in Section~III-E.
+
+\section{Experimental Plan}
+
+A defensible ICDE evaluation requires a fresh, controlled matrix.  We will use
+one build and dataset for all backends, report at least three repetitions with
+median and dispersion, and normalize CPU cost by bytes and rows.  The matrix
+will include \texttt{pread}, \texttt{io\_uring}, and SPDK; single and double
+buffers; 1--24 SSDs; 1--48 workers; Pixels and Parquet; and both ClickBench and
+TPC-H queries.  Ablations will isolate buffer reuse, fixed registration,
+prefetch depth, CPU affinity, asynchronous metadata, and shared completion
+pollers.  Besides wall time and throughput, we will report task-clock, cycles,
+instructions, cache misses, context switches, I/O bytes, request latency,
+empty-poll ratio, peak memory, and NUMA traffic.
+
+Correctness tests will cover short reads, corrupt metadata, cancellation,
+partial batch failure, non-aligned ranges, fragmented files, and the absence of
+SPDK hardware.  The primary research comparison is not simply ``which backend
+is faster,'' but which combination achieves the best throughput per CPU core
+and per byte of reserved memory under each workload regime.
+
+\section{Related Work}
+
+DuckDB demonstrates a vectorized, in-process analytical engine and provides
+the execution framework used by our prototype~\cite{duckdb}.  Apache Arrow and
+Parquet define widely used in-memory and storage representations; our Parquet
+adapter deliberately leaves decoding to Arrow while unifying only raw I/O
+buffers~\cite{arrow,parquet}.  \texttt{io\_uring} reduces Linux asynchronous
+I/O overhead through shared submission and completion rings~\cite{iouring}.
+SPDK moves NVMe drivers into user space and uses polling and DMA memory to
+remove kernel-stack overhead~\cite{spdk}.  Our work is complementary: it
+focuses on the ownership and scheduling contract required to place these
+backends beneath columnar formats, and on the interference created when I/O
+latency is successfully hidden.
+
+% TODO: add the published Pixels paper and a broader survey of database buffer
+% management, asynchronous prefetching, and computational-storage work.
+
+\section{Conclusion}
+
+Fast storage does not remove I/O management from analytical systems; it makes
+the interaction among queues, buffers, completion, and decoding more important.
+This draft presents a format-neutral architecture and an initial implementation
+in Pixels and DuckDB.  Preliminary experiments show meaningful gains from
+overlap, but also show that aggressive overlap can convert I/O stalls into
+cache and memory contention.  Completing the common session API, asynchronous
+metadata pipeline, and controlled cross-format evaluation will turn the
+current engineering prototype into a submission-ready ICDE paper.
+
+\section*{Acknowledgment}
+
+% TODO: funding and acknowledgments.
+Omitted for anonymous review.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

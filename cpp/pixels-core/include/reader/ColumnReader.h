@@ -27,12 +27,11 @@
 
 #include "TypeDescription.h"
 #include "physical/natives/ByteBuffer.h"
-#include "pixels-common/pixels.pb.h"
-#include <cmath>
-#include <memory>
+#include "pixels_generated.h"
+#include "math.h"
+#include "duckdb.h"
+#include "duckdb/common/types/vector.hpp"
 #include "PixelsFilter.h"
-#include "PixelsBitMask.h"
-#include "vector/ColumnVector.h"
 
 class ColumnReader
 {
@@ -42,10 +41,10 @@ public:
     static std::shared_ptr <ColumnReader> newColumnReader(std::shared_ptr <TypeDescription> type);
 
     /**
-     * Closes this column reader and releases any resources associated
-     * with it. If the column reader is already closed then invoking this
-     * method has no effect.
-     */
+       * Closes this column reader and releases any resources associated
+       * with it. If the column reader is already closed then invoking this
+       * method has no effect.
+       */
     virtual void close() = 0;
 
     /**
@@ -60,13 +59,12 @@ public:
      * @param vectorIndex the index from where we start reading values into the vector
      * @param vector   vector to read values into
      * @param chunkIndex the metadata of the column chunk to read.
-     * @param filterMask the bitmask to store filter results
      */
     virtual void read(std::shared_ptr <ByteBuffer> input,
-                      pixels::proto::ColumnEncoding &encoding,
+                      const pixels::fb::ColumnEncoding* encoding,
                       int offset, int size, int pixelStride,
                       int vectorIndex, std::shared_ptr <ColumnVector> vector,
-                      pixels::proto::ColumnChunkIndex &chunkIndex,
+                      const pixels::fb::ColumnChunkIndex* chunkIndex,
                       std::shared_ptr <PixelsBitMask> filterMask);
 
     void setValid(const std::shared_ptr <ByteBuffer> &input, int pixelStride,

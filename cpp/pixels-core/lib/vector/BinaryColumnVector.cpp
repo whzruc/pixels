@@ -23,13 +23,20 @@
  * @create 2023-03-17
  */
 #include "vector/BinaryColumnVector.h"
-#include <cstdint>
-#include <cstring>
+#include "vector/ColumnVectorBufferPool.h"
 
 BinaryColumnVector::BinaryColumnVector(uint64_t len, bool encoding) : ColumnVector(len, encoding)
 {
-  posix_memalign(reinterpret_cast<void **>(&vector), 32,len * sizeof(pixels::string_t));
-  str_vec.resize(len);
+  // Reuse the large aligned string_t array across files via a thread-local pool
+  // to avoid per-file mmap/munmap churn and first-touch page faults that
+  // dominate setRef off-CPU time under high concurrency.
+  vectorBytes = len * sizeof(duckdb::string_t);
+  vector = reinterpret_cast<duckdb::string_t *>(
+      ColumnVectorBufferPool::acquire(vectorBytes, 32));
+  // NOTE: str_vec is only used by the write path (StringColumnWriter via setVal).
+  // The read/query path uses setRef and never touches str_vec, so we allocate it
+  // lazily to avoid default-constructing `len` std::string objects (and the large
+  // amount of first-touch page faults that dominates createColumn in read workloads).
   memoryUsage += (long) sizeof(uint8_t) * len;
 }
 
@@ -38,8 +45,9 @@ void BinaryColumnVector::close()
   if (!closed)
   {
     ColumnVector::close();
-    free(vector);
+    ColumnVectorBufferPool::release(vector, vectorBytes, 32);
     vector = nullptr;
+    vectorBytes = 0;
   }
 }
 
@@ -49,10 +57,14 @@ void BinaryColumnVector::setRef(int elementNum, uint8_t *const &sourceBuf, int s
   {
     writeIndex = elementNum + 1;
   }
-  this->vector[elementNum]= pixels::string_t((char *) (sourceBuf + start), length);
+  auto plain_str = duckdb::char_ptr_cast(sourceBuf + start);
+
+  this->vector[elementNum]
+      = duckdb::string_t(plain_str, length);
 //    std::cout<< this->vector[elementNum].GetString()<<std::endl;
   // TODO: isNull should implemented, but not now.
-
+  // const char* __restrict src_ptr = reinterpret_cast<const char*>(sourceBuf + start);
+  // this->vector[elementNum] = duckdb::string_t(src_ptr, length);
 }
 
 void BinaryColumnVector::print(int rowCount)
@@ -99,10 +111,14 @@ void BinaryColumnVector::add(uint8_t *v, int len)
 
 void BinaryColumnVector::setVal(int elementNum, uint8_t *sourceBuf, int start, int length)
 {
-  vector[elementNum] = pixels::string_t(reinterpret_cast<char *>(sourceBuf + start), length);
+  vector[elementNum] = duckdb::string_t(reinterpret_cast<char *>(sourceBuf + start), length);
   isNull[elementNum] = false;
+  // Lazily allocate str_vec on first write-path use (see constructor note).
+  if (str_vec.size() <= (size_t) elementNum)
+  {
+    str_vec.resize(this->length);
+  }
   str_vec[elementNum] = std::string(reinterpret_cast<char *>(sourceBuf + start), length);
-  //std::cout<<"add str "<<str_vec[elementNum]<<std::endl;
 }
 
 void BinaryColumnVector::ensureSize(uint64_t size, bool preserveData)
@@ -110,15 +126,18 @@ void BinaryColumnVector::ensureSize(uint64_t size, bool preserveData)
   ColumnVector::ensureSize(size, preserveData);
   if (length < size)
   {
-    pixels::string_t *oldVector = vector;
-    posix_memalign(reinterpret_cast<void **>(&vector), 32, size * sizeof(pixels::string_t));
+    duckdb::string_t *oldVector = vector;
+    size_t oldVectorBytes = vectorBytes;
+    vectorBytes = size * sizeof(duckdb::string_t);
+    vector = reinterpret_cast<duckdb::string_t *>(
+        ColumnVectorBufferPool::acquire(vectorBytes, 32));
     str_vec.resize(size);
     if (preserveData)
     {
       std::copy(oldVector, oldVector + length, vector);
     }
-    delete[] oldVector;
-    memoryUsage += (long) sizeof(pixels::string_t) * (size - length);
+    ColumnVectorBufferPool::release(oldVector, oldVectorBytes, 32);
+    memoryUsage += (long) sizeof(duckdb::string_t) * (size - length);
     resize(size);
   }
 }

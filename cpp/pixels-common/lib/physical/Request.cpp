@@ -24,16 +24,30 @@
  */
 #include "physical/Request.h"
 
-Request::Request(uint64_t queryId_, uint64_t start_, uint64_t length_,
-                 int64_t bufferId)
+
+Request::Request(uint64_t queryId_, uint64_t start_, uint64_t length_, std::string columnName_,int64_t bufferId)
 {
-  queryId = queryId_;
-  start = start_;
-  length = length_;
-  this->bufferId = bufferId;
-  ringIndex = 0;
+    queryId = queryId_;
+    start = start_;
+    length = length_;
+    columnName=columnName_;
+    this->bufferId = bufferId;
+}
+Request::Request(uint64_t queryId_, uint64_t start_, uint64_t length_,int64_t bufferId)
+{
+    queryId = queryId_;
+    start = start_;
+    length = length_;
+    columnName="";
+    this->bufferId = bufferId;
 }
 
-int Request::hashCode() { return (int)((start << 32) >> 32); }
+int Request::hashCode()
+{
+    return (int) ((start << 32) >> 32);
+}
 
-int Request::comparedTo(Request o) { return start == o.start; }
+int Request::comparedTo(Request o)
+{
+    return start == o.start;
+}

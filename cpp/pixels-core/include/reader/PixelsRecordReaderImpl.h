@@ -30,7 +30,7 @@
 #include "vector/VectorizedRowBatch.h"
 #include "physical/Scheduler.h"
 #include "physical/SchedulerFactory.h"
-#include "pixels-common/pixels.pb.h"
+#include "pixels_generated.h"
 #include "PixelsFooterCache.h"
 #include "reader/PixelsReaderOption.h"
 #include "utils/String.h"
@@ -41,6 +41,7 @@
 #include "physical/BufferPool.h"
 #include "physical/natives/DirectUringRandomAccessFile.h"
 #include "PixelsFilter.h"
+#include "physical/SelectiveBufferScheduler.h"
 
 class ChunkId
 {
@@ -65,9 +66,9 @@ class PixelsRecordReaderImpl : public PixelsRecordReader
 {
 public:
     explicit PixelsRecordReaderImpl(std::shared_ptr <PhysicalReader> reader,
-                                    const pixels::proto::PostScript &pixelsPostScript,
-                                    const pixels::proto::Footer &pixelsFooter,
-                                    PixelsReaderOption &opt,
+                                    const pixels::fb::PostScript* pixelsPostScript,
+                                    const pixels::fb::Footer* pixelsFooter,
+                                    const PixelsReaderOption &opt,
                                     std::shared_ptr <PixelsFooterCache> pixelsFooterCache
     );
 
@@ -79,6 +80,9 @@ public:
 
     bool read();
 
+    // Inspect existing metadata only. No data read or buffer mutation occurs.
+    pixels::SelectiveBufferScheduler::Demand prepareBufferDemand();
+
     std::shared_ptr <PixelsBitMask> getFilterMask();
 
     bool isEndOfFile() override;
@@ -87,8 +91,16 @@ public:
 
     void close() override;
 
+    std::string getFileName()
+    {
+        return fileName;
+    }
+
+    void nextRowGroup();
+
 private:
     std::vector <int64_t> bufferIds;
+
 
     void prepareRead();
 
@@ -98,16 +110,13 @@ private:
 
     void UpdateRowGroupInfo();
 
-    static std::mutex mutex_;
     std::shared_ptr <PhysicalReader> physicalReader;
-    pixels::proto::Footer footer;
-    pixels::proto::PostScript postScript;
+    const pixels::fb::Footer* footer;
+    const pixels::fb::PostScript* postScript;
     std::shared_ptr <PixelsFooterCache> footerCache;
     PixelsReaderOption option;
-    //pixels::predicate filter
-    pixels::TableFilterSet filter;
+    duckdb::TableFilterSet *filter;
     long queryId;
-    int ringIndex;
     int RGStart;
     int RGLen;
     bool everRead;
@@ -122,10 +131,10 @@ private:
     int curRGRowCount;
     bool enabledFilterPushDown;
     std::shared_ptr <PixelsBitMask> filterMask;
-    std::shared_ptr <pixels::proto::RowGroupFooter> curRGFooter;
-    std::vector <std::shared_ptr<pixels::proto::ColumnEncoding>> curEncoding;
+    const pixels::fb::RowGroupFooter* curRGFooter;
+    std::vector<const pixels::fb::ColumnEncoding*> curEncoding;
     std::vector<int> curChunkBufferIndex;
-    std::vector <std::shared_ptr<pixels::proto::ColumnChunkIndex>> curChunkIndex;
+    std::vector<const pixels::fb::ColumnChunkIndex*> curChunkIndex;
     /**
      * Columns included by reader option; if included, set true
      */
@@ -138,16 +147,21 @@ private:
 
     // buffers of each chunk in this file, arranged by chunk's row group id and column id
     std::vector <std::shared_ptr<ByteBuffer>> chunkBuffers;
+    // Buffer index pinned at the first read() of this file; used for all subsequent row-group reads
+    // so that BufferPool::Switch() between files does not cause cross-file buffer aliasing.
+    int pixelsBufferIdx;
     // column readers for each target columns
     std::vector <std::shared_ptr<ColumnReader>> readers;
     std::vector <uint32_t> targetColumns;
     std::vector <uint32_t> resultColumns;
     std::vector<bool> resultColumnsEncoded;
     bool enableEncodedVector;
-    std::vector <std::shared_ptr<pixels::proto::RowGroupFooter>> rowGroupFooters;
+    std::vector<const pixels::fb::RowGroupFooter*> rowGroupFooters;
+    // Backing buffers for rowGroupFooters — keeps FlatBuffer memory alive.
+    std::vector<std::shared_ptr<ByteBuffer>> rowGroupFooterBuffers;
 
     int includedColumnNum; // the number of columns to read
-    std::vector <std::shared_ptr<pixels::proto::Type>> includedColumnTypes;
+    std::vector<const pixels::fb::Type*> includedColumnTypes;
 
     std::shared_ptr <TypeDescription> fileSchema;
     std::shared_ptr <TypeDescription> resultSchema;

@@ -26,11 +26,9 @@
 #define PIXELS_PIXELSREADEROPTION_H
 
 #include <iostream>
-#include <memory>
 #include <string>
 #include <vector>
-#include "filter/table_filter.hpp"
-
+#include "duckdb/planner/table_filter.hpp"
 
 class PixelsReaderOption
 {
@@ -57,21 +55,15 @@ class PixelsReaderOption
 
   void setRGRange(int start, int len);
 
-  void setFilter(pixels::TableFilterSet f);
-  
-  pixels::TableFilterSet extractFilter();
+  void setFilter(duckdb::TableFilterSet *filter);
 
-  int getfiltersize();
-
-  void setRingIndex(int ringIndex);
+  duckdb::TableFilterSet *getFilter();
 
   int getRGStart();
 
   int getRGLen();
 
   int getBatchSize() const;
-
-  int getRingIndex() const;
 
   void setTolerantSchemaEvolution(bool t);
 
@@ -83,8 +75,8 @@ class PixelsReaderOption
 
  private:
   std::vector<std::string> includedCols;
+  duckdb::TableFilterSet *filter;
   // TODO: pixelsPredicate
-  pixels::TableFilterSet filter;
   bool skipCorruptRecords;
   bool tolerantSchemaEvolution;     // this may lead to column missing due to schema evolution
   bool enableEncodedColumnVector;   // whether read encoded column vectors directly when possible
@@ -93,6 +85,5 @@ class PixelsReaderOption
   int batchSize;
   int rgStart;
   int rgLen;
-  int ringIndex;
 };
 #endif //PIXELS_PIXELSREADEROPTION_H

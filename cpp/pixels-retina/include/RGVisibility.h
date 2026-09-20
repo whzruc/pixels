@@ -19,40 +19,39 @@
  */
 #ifndef RG_VISIBILITY_H
 #define RG_VISIBILITY_H
-#include "RetinaBase.h"
+
 #include "TileVisibility.h"
-#include <utility>
-#include <vector>
+#include <memory>
+#include <atomic>
 
-template<size_t CAPACITY>
-class RGVisibility : public pixels::RetinaBase<RGVisibility<CAPACITY>> {
+class RGVisibility {
 public:
-    explicit RGVisibility(uint64_t rgRecordNum, uint64_t timestamp = 0,
-                          const std::vector<uint64_t>* initialBitmap = nullptr);
-    ~RGVisibility() override;
+    explicit RGVisibility(uint64_t rgRecordNum);
+    ~RGVisibility();
 
-    void deleteRGRecord(uint32_t rowId, uint64_t timestamp,
-                        ReplayMode replayMode = ReplayMode::NORMAL);
+    void deleteRGRecord(uint32_t rowId, uint64_t timestamp);
     uint64_t* getRGVisibilityBitmap(uint64_t timestamp);
 
-    std::vector<uint64_t> collectRGGarbage(uint64_t timestamp);
-
-    std::vector<uint64_t> exportChainItemsAfter(uint64_t safeGcTs) const;
-    void importDeletionChain(const uint64_t* items, size_t pairCount);
+    void collectRGGarbage(uint64_t timestamp);
 
     uint64_t getBitmapSize() const;
 
 private:
-    static constexpr uint32_t VISIBILITY_RECORD_CAPACITY = CAPACITY;
-    static constexpr uint32_t BITMAP_SIZE_PER_TILE_VISIBILITY = BITMAP_WORDS(CAPACITY);
+    static constexpr uint32_t VISIBILITY_RECORD_CAPACITY = 256;
+    static constexpr uint32_t MAX_ACCESS_COUNT = 0x007FFFFF;
+    static constexpr uint32_t GC_MASK = 0xFF000000;
+    static constexpr uint32_t ACCESS_MASK = 0x00FFFFFF;
+    static constexpr uint32_t ACCESS_INC = 0x00000001;
+    static constexpr uint32_t BITMAP_SIZE_PER_TILE_VISIBILITY = 4;
+    static constexpr uint32_t RG_READ_LEASE_MS = 100;
 
-    TileVisibility<CAPACITY>* tileVisibilities;
+    TileVisibility* tileVisibilities;
     const uint64_t tileCount;
+    std::atomic<uint32_t> flag; // high 1 byte is the gc flag, low 3 bytes are the access count
 
-    TileVisibility<CAPACITY>* getTileVisibility(uint32_t rowId) const;
+    TileVisibility* getTileVisibility(uint32_t rowId) const;
+    void beginRGAccess();
+    void endRGAccess();
 };
 
-static_assert(RETINA_CAPACITY > 0 && RETINA_CAPACITY % 64 == 0,
-              "RETINA_CAPACITY must be a multiple of 64.");
-using RGVisibilityInstance = RGVisibility<RETINA_CAPACITY>;
 #endif //RG_VISIBILITY_H

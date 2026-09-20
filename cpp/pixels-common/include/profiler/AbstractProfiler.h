@@ -25,8 +25,6 @@
 #ifndef DUCKDB_ABSTRACTPROFILER_H
 #define DUCKDB_ABSTRACTPROFILER_H
 
-constexpr bool enableProfile = true;
-
 class AbstractProfiler
 {
 public:

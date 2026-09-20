@@ -10,10 +10,10 @@ extern "C" {
 /*
  * Class:     io_pixelsdb_pixels_retina_RGVisibility
  * Method:    createNativeObject
- * Signature: (JJ[J)J
+ * Signature: (J)J
  */
 JNIEXPORT jlong JNICALL Java_io_pixelsdb_pixels_retina_RGVisibility_createNativeObject
-  (JNIEnv *, jobject, jlong, jlong, jlongArray);
+  (JNIEnv *, jobject, jlong);
 
 /*
  * Class:     io_pixelsdb_pixels_retina_RGVisibility
@@ -26,10 +26,10 @@ JNIEXPORT void JNICALL Java_io_pixelsdb_pixels_retina_RGVisibility_destroyNative
 /*
  * Class:     io_pixelsdb_pixels_retina_RGVisibility
  * Method:    deleteRecord
- * Signature: (IJJI)V
+ * Signature: (JJJ)V
  */
 JNIEXPORT void JNICALL Java_io_pixelsdb_pixels_retina_RGVisibility_deleteRecord
-  (JNIEnv *, jobject, jint, jlong, jlong, jint);
+  (JNIEnv *, jobject, jint, jlong, jlong);
 
 /*
  * Class:     io_pixelsdb_pixels_retina_RGVisibility
@@ -42,50 +42,10 @@ JNIEXPORT jlongArray JNICALL Java_io_pixelsdb_pixels_retina_RGVisibility_getVisi
 /*
  * Class:     io_pixelsdb_pixels_retina_RGVisibility
  * Method:    garbageCollect
- * Signature: (JJ)[J
+ * Signature: (JJ)V
  */
-JNIEXPORT jlongArray JNICALL Java_io_pixelsdb_pixels_retina_RGVisibility_garbageCollect
+JNIEXPORT void JNICALL Java_io_pixelsdb_pixels_retina_RGVisibility_garbageCollect
   (JNIEnv *, jobject, jlong, jlong);
-
-/*
- * Class:     io_pixelsdb_pixels_retina_RGVisibility
- * Method:    exportChainItemsAfter
- * Signature: (JJ)[J
- */
-JNIEXPORT jlongArray JNICALL Java_io_pixelsdb_pixels_retina_RGVisibility_exportChainItemsAfter
-  (JNIEnv *, jobject, jlong, jlong);
-
-/*
- * Class:     io_pixelsdb_pixels_retina_RGVisibility
- * Method:    importDeletionChain
- * Signature: ([JJ)V
- */
-JNIEXPORT void JNICALL Java_io_pixelsdb_pixels_retina_RGVisibility_importDeletionChain
-  (JNIEnv *, jobject, jlongArray, jlong);
-
-/*
- * Class:     io_pixelsdb_pixels_retina_RGVisibility
- * Method:    getNativeMemoryUsage
- * Signature: ()J
- */
-JNIEXPORT jlong JNICALL Java_io_pixelsdb_pixels_retina_RGVisibility_getNativeMemoryUsage
-  (JNIEnv *, jclass);
-
-/*
- * Class:     io_pixelsdb_pixels_retina_RGVisibility
- * Method:    getRetinaTrackedMemoryUsage
- * Signature: ()J
- */
-JNIEXPORT jlong JNICALL Java_io_pixelsdb_pixels_retina_RGVisibility_getRetinaTrackedMemoryUsage
-  (JNIEnv *, jclass);
-
-/*
- * Class:     io_pixelsdb_pixels_retina_RGVisibility
- * Method:    getRetinaObjectCount
- * Signature: ()J
- */
-JNIEXPORT jlong JNICALL Java_io_pixelsdb_pixels_retina_RGVisibility_getRetinaObjectCount
-  (JNIEnv *, jclass);
 
 #ifdef __cplusplus
 }

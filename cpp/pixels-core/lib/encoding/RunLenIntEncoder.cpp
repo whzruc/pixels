@@ -48,11 +48,11 @@ RunLenIntEncoder::RunLenIntEncoder(bool isSigned, bool isAlignedBitPacking) :
     // PENDING: will the byte buffer be used in a buffer pool
     //          so that we do not need to create it here
     outputStream = std::make_shared<ByteBuffer>();
-    literals = new long[Constants::INT_RLE_MAX_SCOPE];
-    zigzagLiterals = new long[Constants::INT_RLE_MAX_SCOPE];
-    baseRedLiterals = new long[Constants::INT_RLE_MAX_SCOPE];
-    adjDeltas = new long[Constants::INT_RLE_MAX_SCOPE];
-    gapVsPatchList = new long[Constants::INT_RLE_MAX_SCOPE];
+    literals = new long[Constants::MAX_SCOPE];
+    zigzagLiterals = new long[Constants::MAX_SCOPE];
+    baseRedLiterals = new long[Constants::MAX_SCOPE];
+    adjDeltas = new long[Constants::MAX_SCOPE];
+    gapVsPatchList = new long[Constants::MAX_SCOPE];
     clear();
 }
 
@@ -92,12 +92,10 @@ void RunLenIntEncoder::encode(long *values, int offset, int length, byte *result
 {
     for (int i = 0; i < length; ++i)
     {
-        // std::cout << encodingType << " value : " << values[i + offset] << std::endl;
+        std::cout << encodingType << " value : " << values[i + offset] << std::endl;
         this->write(values[i + offset]);
     }
     flush();
-    // std::cout << "length: " << length << std::endl;
-    // std::cout << "buffer end: " << outputStream->getWritePos() << std::endl;
     resLen = outputStream->getWritePos();
     outputStream->getBytes(results, resLen);
     outputStream->resetPosition();
@@ -137,9 +135,9 @@ void RunLenIntEncoder::determineEncoding()
     zzBits100p = percentileBits(zigzagLiterals, 0, numLiterals, 1.0);
 
     // less than min repeat num so direct encoding
-    if (numLiterals <= Constants::RLE_MIN_REPEAT)
+    if (numLiterals <= Constants::MIN_REPEAT)
     {
-        // std::cout << "numLiterals <= Constants::RLE_MIN_REPEAT" << std::endl;
+        // std::cout << "numLiterals <= Constants::MIN_REPEAT" << std::endl;
         encodingType = EncodingType::DIRECT;
         return;
     }
@@ -467,7 +465,7 @@ void RunLenIntEncoder::writeShortRepeatValues()
     header |= ((numBytesRepeatVal - 1) << 3);
 
     // repeat count (3 bits, 3~10 values)
-    fixedRunLength -= Constants::RLE_MIN_REPEAT;
+    fixedRunLength -= Constants::MIN_REPEAT;
     header |= fixedRunLength;
 
     // write header
@@ -602,7 +600,7 @@ void RunLenIntEncoder::writeDeltaValues()
         // if fixed run length is greater than threshold then it will be fixed
         // delta sequence with delta value 0 else fixed delta sequence with
         // non-zero delta value
-        if (fixedRunLength > Constants::RLE_MIN_REPEAT)
+        if (fixedRunLength > Constants::MIN_REPEAT)
         {
             // ex. sequence: 2 2 2 2 2 2 2 2
             len = fixedRunLength - 1;
@@ -815,26 +813,26 @@ void RunLenIntEncoder::write(long value)
                 fixedRunLength += 1;
 
                 // if fixed run len meets the minimum repeat threshold, and variable len is non-zero
-                if (fixedRunLength >= Constants::RLE_MIN_REPEAT && variableRunLength > 0)
+                if (fixedRunLength >= Constants::MIN_REPEAT && variableRunLength > 0)
                 {
-                    numLiterals -= Constants::RLE_MIN_REPEAT;
+                    numLiterals -= Constants::MIN_REPEAT;
                     // before entering this branch, last (min_repeat - 1) same values are counted into variable run
-                    variableRunLength -= (Constants::RLE_MIN_REPEAT - 1);
-                    long *tailVals = new long[Constants::RLE_MIN_REPEAT];
+                    variableRunLength -= (Constants::MIN_REPEAT - 1);
+                    long *tailVals = new long[Constants::MIN_REPEAT];
                     // copy out the current fixed run part
                     // PENDING: can we use memcpy here?
-                    std::memcpy(tailVals, literals + numLiterals, Constants::RLE_MIN_REPEAT * sizeof(long));
+                    std::memcpy(tailVals, literals + numLiterals, Constants::MIN_REPEAT * sizeof(long));
                     // flush the variable run  
                     determineEncoding();
                     writeValues();
                     // shift the tail fixed runs to the start of the buffer
-                    memcpy(literals + numLiterals, tailVals, Constants::RLE_MIN_REPEAT * sizeof(long));
-                    numLiterals += Constants::RLE_MIN_REPEAT;
+                    memcpy(literals + numLiterals, tailVals, Constants::MIN_REPEAT * sizeof(long));
+                    numLiterals += Constants::MIN_REPEAT;
                     delete[] tailVals;
 
                 }
 
-                if (fixedRunLength == Constants::INT_RLE_MAX_SCOPE)
+                if (fixedRunLength == Constants::MAX_SCOPE)
                 {
                     determineEncoding();
                     writeValues();
@@ -844,10 +842,10 @@ void RunLenIntEncoder::write(long value)
             else
             {
                 // if fixed run length meets the minimum repeat threshold
-                if (fixedRunLength >= Constants::RLE_MIN_REPEAT)
+                if (fixedRunLength >= Constants::MIN_REPEAT)
                 {
                     // if meets the short repeat condition, write values as short repeats
-                    if (fixedRunLength <= Constants::INT_RLE_MAX_SHORT_REPEAT)
+                    if (fixedRunLength <= Constants::MAX_SHORT_REPEAT_LENGTH)
                     {
                         encodingType = EncodingType::SHORT_REPEAT;
                         writeValues();
@@ -864,7 +862,7 @@ void RunLenIntEncoder::write(long value)
                 // if fixed run length is smaller than the minimum repeat threshold
                 // and current value is different from previous one
                 // it is a variable run
-                if (fixedRunLength > 0 && fixedRunLength < Constants::RLE_MIN_REPEAT)
+                if (fixedRunLength > 0 && fixedRunLength < Constants::MIN_REPEAT)
                 {
                     if (value != literals[numLiterals - 1])
                     {
@@ -886,7 +884,7 @@ void RunLenIntEncoder::write(long value)
                     variableRunLength += 1;
 
                     // flush variable run if it reaches the max scope
-                    if (variableRunLength == Constants::INT_RLE_MAX_SCOPE)
+                    if (variableRunLength == Constants::MAX_SCOPE)
                     {
                         determineEncoding();
                         writeValues();
@@ -908,15 +906,15 @@ void RunLenIntEncoder::flush()
         }
         else if (fixedRunLength != 0)
         {
-            if (fixedRunLength < Constants::RLE_MIN_REPEAT)
+            if (fixedRunLength < Constants::MIN_REPEAT)
             {
                 variableRunLength = fixedRunLength;
                 fixedRunLength = 0;
                 determineEncoding();
                 writeValues();
             }
-            else if (fixedRunLength >= Constants::RLE_MIN_REPEAT
-                     && fixedRunLength <= Constants::INT_RLE_MAX_SHORT_REPEAT)
+            else if (fixedRunLength >= Constants::MIN_REPEAT
+                     && fixedRunLength <= Constants::MAX_SHORT_REPEAT_LENGTH)
             {
                 encodingType = EncodingType::SHORT_REPEAT;
                 writeValues();

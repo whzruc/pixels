@@ -4,35 +4,98 @@ set(CMAKE_CXX_STANDARD 17)
 
 include(ExternalProject)
 
-
-file(GLOB_RECURSE pixels_common_cxx
-		"lib/physical/*.cpp"
-		"lib/physical/*.h"
-		"lib/exception/*.cpp"
-		"lib/exception/*.h"
-		"lib/utils/*.cpp"
-		"lib/utils/*.h"
-		"lib/profiler/*.cpp"
-		"lib/profiler/*.h"
-		"include/physical/*.h"
-		"include/profiler/*.h"
-		"include/utils/*.h"
-		"include/physical/BufferPool/*.h"
-		"lib/MergedRequest.cpp"
+set(pixels_common_cxx
+		lib/physical/storage/LocalFS.cpp
+		lib/physical/storage/LocalFSProvider.cpp
+		lib/physical/storage/PhysicalLocalWriter.cpp
+		lib/physical/PhysicalWriterOption.cpp
+		lib/physical/Status.cpp
+		lib/physical/Storage.cpp
+		lib/physical/FilePath.cpp
+		lib/physical/natives/PixelsRandomAccessFile.cpp
+		lib/physical/natives/DirectRandomAccessFile.cpp
+		lib/physical/natives/ByteBuffer.cpp
+		lib/physical/io/PhysicalLocalReader.cpp
+		lib/physical/StorageFactory.cpp
+		lib/physical/Request.cpp
+		lib/physical/RequestBatch.cpp
+		lib/physical/scheduler/NoopScheduler.cpp
+		lib/physical/SchedulerFactory.cpp
+		lib/exception/InvalidArgumentException.cpp
+		lib/utils/Constants.cpp
+		lib/utils/String.cpp
+		include/physical/natives/DirectIoLib.h
+		lib/physical/natives/DirectIoLib.cpp
+		include/utils/ConfigFactory.h
+		lib/utils/ConfigFactory.cpp
+		include/physical/MergedRequest.h
+		include/physical/scheduler/SortMergeScheduler.h
+		lib/physical/scheduler/SortMergeScheduler.cpp
+		lib/MergedRequest.cpp
+		include/profiler/TimeProfiler.h
+		lib/profiler/TimeProfiler.cpp
+		include/profiler/ProfilerSwitch.h
+		lib/profiler/ProfilerSwitch.cpp
+		include/profiler/CountProfiler.h
+		lib/profiler/CountProfiler.cpp
+		include/profiler/AbstractProfiler.h
+		include/physical/allocator/Allocator.h
+		include/physical/allocator/OrdinaryAllocator.h
+		lib/physical/allocator/OrdinaryAllocator.cpp
+		include/physical/allocator/BufferPoolAllocator.h
+		lib/physical/allocator/BufferPoolAllocator.cpp
+		include/physical/BufferPool.h
+		lib/physical/BufferPool.cpp
+		include/physical/natives/DirectUringRandomAccessFile.h
+		lib/physical/natives/DirectUringRandomAccessFile.cpp
+		include/physical/natives/DirectUringRandomAccessFileNonFixed.h
+		lib/physical/natives/DirectUringRandomAccessFileNonFixed.cpp
+		include/utils/ColumnSizeCSVReader.h
+		lib/utils/ColumnSizeCSVReader.cpp
+		include/utils/ColumnSizeCSVWriter.h
+		lib/utils/ColumnSizeCSVWriter.cpp
+		include/physical/StorageArrayScheduler.h
+		lib/physical/StorageArrayScheduler.cpp
+		include/physical/natives/ByteOrder.h
+		lib/physical/DynamicBufferPool.cpp
+		include/physical/DynamicBufferPool.h
+		lib/physical/natives/DirectUringRandomAccessFileDynamic.cpp
+		include/physical/natives/DirectUringRandomAccessFileDynamic.h
+		lib/physical/GlobalByteBufferPool.cpp
+		include/physical/GlobalByteBufferPool.h
+		lib/physical/GlobalStaticBufferPool.cpp
+		include/physical/GlobalStaticBufferPool.h
+		lib/physical/ThreadContext.cpp
+		include/physical/ThreadContext.h
+		lib/physical/natives/DirectUringRandomAccessFileStatic.cpp
+		include/physical/natives/DirectUringRandomAccessFileStatic.h
 )
 
-include_directories(include)
+set(FBS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../proto/pixels.fbs")
+set(GEN_HEADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/flatbuffers_out")
+set(FBS_HEADER "${GEN_HEADER_DIR}/pixels_generated.h")
 
-if(NOT DEFINED ENV{PIXELS_SRC})
-	message(FATAL_ERROR "You must set PIXELS_SRC environment variable. The value should be set to the Pixels base directory.")
-endif()
+file(MAKE_DIRECTORY ${GEN_HEADER_DIR})
 
-protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS $ENV{PIXELS_SRC}/proto/pixels.proto)
+add_custom_command(
+		OUTPUT "${FBS_HEADER}"
+		COMMAND flatc --cpp --gen-object-api -o "${GEN_HEADER_DIR}" "${FBS_SRC}"
+		DEPENDS "${FBS_SRC}"
+		COMMENT "Running FlatBuffers compiler (flatc) with --gen-object-api on ${FBS_SRC}"
+		VERBATIM
+)
 
-add_library(pixels-common ${pixels_common_cxx} ${PROTO_SRCS} ${PROTO_HDRS})
+add_custom_target(pixels_fb_gen DEPENDS "${FBS_HEADER}")
 
-# liburing
-set(LIBURING_GIT_REPOSITORY git@github.com:axboe/liburing.git)
+add_library(pixels-common ${pixels_common_cxx} "${FBS_HEADER}")
+add_dependencies(pixels-common pixels_fb_gen)
+
+target_include_directories(pixels-common PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${GEN_HEADER_DIR}>
+)
+
+set(LIBURING_GIT_REPOSITORY https://github.com/axboe/liburing.git)
 set(LIBURING_GIT_TAG liburing-2.2)
 set(LIBURING_BUILD_COMMAND make -j)
 
@@ -45,12 +108,59 @@ ExternalProject_Add(liburing
 		INSTALL_COMMAND ""
 		BUILD_COMMAND ${LIBURING_BUILD_COMMAND}
 		BUILD_IN_SOURCE true
-		)
+)
 
 add_dependencies(pixels-common liburing)
-include_directories(${CMAKE_CURRENT_BINARY_DIR}/liburing/src/include)
-link_directories(${CMAKE_CURRENT_BINARY_DIR}/liburing/src)
-message(${CMAKE_CURRENT_BINARY_DIR}/liburing/src)
+
+set(LIBURING_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/liburing/src/include)
+set(LIBURING_LIB ${CMAKE_CURRENT_BINARY_DIR}/liburing/src/liburing.a)
+
+target_include_directories(pixels-common PRIVATE ${LIBURING_INCLUDE_DIR})
+
 target_link_libraries(pixels-common
-        ${Protobuf_LIBRARIES}
-		${CMAKE_CURRENT_BINARY_DIR}/liburing/src/liburing.a)
+		PRIVATE
+		${LIBURING_LIB}
+		pthread  # liburing usually depends on pthread
+)
+
+# ── Optional SPDK support ────────────────────────────────────────────────────
+# Enable with:  cmake -DPIXELS_ENABLE_SPDK=ON ...
+# Requires SPDK + DPDK to be installed (e.g. /usr/local/lib/libspdk_nvme.so).
+# Also requires hugepages and VFIO-bound NVMe devices at runtime.
+option(PIXELS_ENABLE_SPDK "Build with SPDK user-space NVMe driver support" OFF)
+
+if(PIXELS_ENABLE_SPDK)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SPDK_NVME    REQUIRED spdk_nvme)
+    pkg_check_modules(SPDK_ENV     REQUIRED spdk_env_dpdk)
+
+    message(STATUS "SPDK support enabled")
+    message(STATUS "  SPDK_NVME_LIBRARIES: ${SPDK_NVME_LIBRARIES}")
+    message(STATUS "  SPDK_ENV_LIBRARIES:  ${SPDK_ENV_LIBRARIES}")
+
+    add_definitions(-DPIXELS_ENABLE_SPDK)
+
+    target_sources(pixels-common PRIVATE
+        lib/physical/natives/DirectSpdkRandomAccessFile.cpp
+        lib/physical/SpdkBufferPool.cpp
+    )
+
+    target_include_directories(pixels-common PRIVATE
+        ${SPDK_NVME_INCLUDE_DIRS}
+        ${SPDK_ENV_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(pixels-common
+        PRIVATE
+        ${SPDK_NVME_LINK_LIBRARIES}
+        ${SPDK_ENV_LINK_LIBRARIES}
+        # SPDK uses UUID library
+        uuid
+    )
+
+    # SPDK libraries are in /usr/local/lib; add rpath so the .so finds them
+    set_target_properties(pixels-common PROPERTIES
+        INSTALL_RPATH "/usr/local/lib"
+        BUILD_RPATH   "/usr/local/lib"
+    )
+endif() # PIXELS_ENABLE_SPDK

@@ -32,6 +32,8 @@
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include "PixelsReader.h"
 #include "physical/StorageArrayScheduler.h"
+#include "physical/SelectiveBufferScheduler.h"
+#include "PixelsFooterCache.h"
 
 namespace duckdb
 {
@@ -40,8 +42,14 @@ namespace duckdb
     {
         mutex lock;
 
-        atomic<int> active_threads; // Number of active threads
-        atomic<bool> all_done; // Whether all threads have completed
+        // Selective-only query state. It remains null for every 8.25 mode.
+        std::unique_ptr<pixels::SelectiveBufferScheduler> selective;
+        atomic<bool> selectiveSummaryPrinted{false};
+
+        // Shared footer cache across all scan threads for this query.
+        // FileTail data is immutable after file creation, so sharing is safe.
+        // The cache's internal lock guards concurrent first-miss writes.
+        std::shared_ptr<PixelsFooterCache> footerCache = std::make_shared<PixelsFooterCache>();
 
         //! The initial reader from the bind phase
         std::shared_ptr <PixelsReader> initialPixelsReader;
@@ -61,6 +69,10 @@ namespace duckdb
         idx_t batch_index;
 
         idx_t max_threads;
+
+        // active threads
+        atomic<int> active_threads; // Number of active threads
+        atomic<bool> all_done; // Whether all threads have completed
 
         TableFilterSet *filters;
 

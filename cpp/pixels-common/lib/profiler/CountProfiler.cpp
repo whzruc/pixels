@@ -23,6 +23,7 @@
  * @create 2023-05-03
  */
 #include "profiler/CountProfiler.h"
+#include "profiler/ProfilerSwitch.h"
 
 CountProfiler &CountProfiler::Instance()
 {
@@ -32,7 +33,10 @@ CountProfiler &CountProfiler::Instance()
 
 void CountProfiler::Count(const std::string &label)
 {
-    if constexpr(enableProfile)
+    if (!IsPixelsProfilerEnabled())
+    {
+        return;
+    }
     {
         std::unique_lock <std::mutex> parallel_lock(lock);
         if (result.find(label) != result.end())
@@ -53,7 +57,10 @@ void CountProfiler::Count(const std::string &label)
 
 void CountProfiler::Count(const std::string &label, int num)
 {
-    if constexpr(enableProfile)
+    if (!IsPixelsProfilerEnabled())
+    {
+        return;
+    }
     {
         std::unique_lock <std::mutex> parallel_lock(lock);
         if (result.find(label) != result.end())
@@ -74,7 +81,10 @@ void CountProfiler::Count(const std::string &label, int num)
 
 void CountProfiler::Print()
 {
-    if constexpr(enableProfile)
+    if (!IsPixelsProfilerEnabled())
+    {
+        return;
+    }
     {
         for (auto iter: result)
         {
