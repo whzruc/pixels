@@ -535,6 +535,36 @@ std::shared_ptr <PixelsBitMask> PixelsRecordReaderImpl::getFilterMask()
     return filterMask;
 }
 
+pixels::SelectiveBufferScheduler::Demand PixelsRecordReaderImpl::prepareBufferDemand()
+{
+    if (!everPrepareRead)
+    {
+        prepareRead();
+    }
+    if (targetRGNum != 1)
+    {
+        throw InvalidArgumentException("selective buffer requires exactly one row group per file");
+    }
+
+    pixels::SelectiveBufferScheduler::Demand demand;
+    auto direct = DynamicBufferPool::GetDirectIoLib();
+    const bool aligned = ConfigFactory::Instance().boolCheckProperty("localfs.enable.direct.io");
+    for (const auto *rg : rowGroupFooters)
+    {
+        for (int col : targetColumns)
+        {
+            const auto *chunk = rg->rowGroupIndexEntry()->columnChunkIndexEntries()->Get(col);
+            const uint64_t offset = chunk->chunkOffset();
+            const uint64_t length = chunk->chunkLength();
+            const uint64_t bytes = aligned && direct
+                ? direct->blockEnd(offset + length) - direct->blockStart(offset)
+                : length;
+            demand[col] = std::max(demand[col], bytes);
+        }
+    }
+    return demand;
+}
+
 bool PixelsRecordReaderImpl::read()
 {
     PROFILE_START("PixelsRecordReaderImpl.read.Total");
