@@ -34,6 +34,7 @@
 #include "reader/PixelsRecordReader.h"
 #include "physical/GlobalByteBufferPool.h"
 #include "physical/natives/DirectUringRandomAccessFileDynamic.h"
+#include "physical/SelectiveBufferScheduler.h"
 #include "utils/ConfigFactory.h"
 #include <iostream>
 
@@ -62,6 +63,7 @@ namespace duckdb
             cfgDoubleBuffer = false;
             cfgDynamicBuffer = false;
             cfgSpdk = false;
+            cfgSelective = false;
         }
 
         ~PixelsReadLocalState()
@@ -94,6 +96,10 @@ namespace duckdb
         bool cfgDoubleBuffer;
         bool cfgDynamicBuffer;
         bool cfgSpdk;
+        // Used only by the separate selective state-transition path.
+        bool cfgSelective;
+        size_t selectiveWorker = 0;
+        pixels::SelectiveBufferScheduler::Task selectiveTask{};
     };
 
 }

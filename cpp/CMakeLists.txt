@@ -19,6 +19,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 set(EXTENSION_SOURCES
         pixels-duckdb/pixels_extension.cpp
         pixels-duckdb/PixelsScanFunction.cpp
+        pixels-duckdb/SelectivePixelsScan.cpp
         pixels-duckdb/ArrowRandomAccessFile.cpp
         pixels-duckdb/ParquetPixelsScan.cpp
 )
