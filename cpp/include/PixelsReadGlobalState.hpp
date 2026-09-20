@@ -32,6 +32,7 @@
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include "PixelsReader.h"
 #include "physical/StorageArrayScheduler.h"
+#include "physical/SelectiveBufferScheduler.h"
 #include "PixelsFooterCache.h"
 
 namespace duckdb
@@ -40,6 +41,10 @@ namespace duckdb
     struct PixelsReadGlobalState : public GlobalTableFunctionState
     {
         mutex lock;
+
+        // Selective-only query state. It remains null for every 8.25 mode.
+        std::unique_ptr<pixels::SelectiveBufferScheduler> selective;
+        atomic<bool> selectiveSummaryPrinted{false};
 
         // Shared footer cache across all scan threads for this query.
         // FileTail data is immutable after file creation, so sharing is safe.

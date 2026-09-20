@@ -21,3 +21,17 @@ include_directories(${GTEST_DIR}/googletest/include)
 include_directories(${PROJECT_SOURCE_DIR}/pixels-core/include)
 include_directories(${PROJECT_SOURCE_DIR}/pixels-common/include)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/../../pixels-common/liburing/src/include)
+
+# Pure scheduling test: no SSD, DuckDB process, or io_uring privilege needed.
+add_executable(
+        SelectiveBufferSchedulerTest
+        EXCLUDE_FROM_ALL
+        SelectiveBufferSchedulerTest.cpp
+)
+target_include_directories(
+        SelectiveBufferSchedulerTest
+        PRIVATE
+        ${PROJECT_SOURCE_DIR}/pixels-common/include
+)
+target_compile_options(SelectiveBufferSchedulerTest PRIVATE -UNDEBUG)
+target_link_libraries(SelectiveBufferSchedulerTest PRIVATE pthread)

@@ -36,6 +36,7 @@
 #include "exception/InvalidArgumentException.h"
 #include "liburing.h"
 #include "liburing/io_uring.h"
+#include "physical/SelectiveBufferScheduler.h"
 
 // Maximum number of buffer slots to pre-register (using sparse registration)
 #define DEFAULT_MAX_BUFFER_SLOTS 1024
@@ -134,6 +135,11 @@ public:
      * Get DirectIoLib instance
      */
     static std::shared_ptr<DirectIoLib> GetDirectIoLib();
+
+    // Read-only metadata snapshots for the selective scheduler. These do not
+    // alter allocation, growth, registration, or switching behavior.
+    static pixels::SelectiveBufferScheduler::Capacity GetCapacities();
+    static int GetAllocationBufferIdx() { return currBufferIdx; }
 
 private:
     DynamicBufferPool() = default;

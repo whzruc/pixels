@@ -23,6 +23,7 @@
  * @create 2023-03-26
  */
 #include "PixelsScanFunction.hpp"
+#include "SelectivePixelsScan.hpp"
 
 #include <physical/DynamicBufferPool.h>
 #ifdef PIXELS_ENABLE_SPDK
@@ -467,6 +468,8 @@ namespace duckdb
 
         result->file_index.resize(result->storageArrayScheduler->getDeviceSum());
 
+        selective_scan::InitializeGlobal(*result);
+
         result->max_threads = max_threads;
 
         result->batch_index = 0;
@@ -627,6 +630,7 @@ namespace duckdb
         try {
             result->cfgSpdk = ConfigFactory::Instance().getProperty("localfs.async.lib") == "spdk";
         } catch (...) { result->cfgSpdk = false; }
+        selective_scan::InitializeLocal(gstate, *result);
         if (!PixelsParallelStateNext(context.client, bind_data, *result, gstate, true))
         {
             return nullptr;
@@ -812,6 +816,11 @@ namespace duckdb
                                                      PixelsReadGlobalState& parallel_state,
                                                      bool is_init_state)
     {
+        if (scan_data.cfgSelective)
+        {
+            return selective_scan::StateNext(
+                context, bind_data, scan_data, parallel_state, is_init_state);
+        }
         PROFILE_START("PixelsScanFunction.PixelsParallelStateNext.Total");
         PROFILE_START("PixelsScanFunction.StateNext.LockWait");
         unique_lock<mutex> parallel_lock(parallel_state.lock);

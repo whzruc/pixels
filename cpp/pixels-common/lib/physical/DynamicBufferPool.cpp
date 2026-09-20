@@ -363,6 +363,19 @@ std::shared_ptr<DirectIoLib> DynamicBufferPool::GetDirectIoLib() {
     return directIoLib;
 }
 
+pixels::SelectiveBufferScheduler::Capacity DynamicBufferPool::GetCapacities() {
+    pixels::SelectiveBufferScheduler::Capacity result;
+    for (int idx = 0; idx < 2; ++idx) {
+        for (const auto &entry : colToSlot[idx]) {
+            const auto &buffer = bufferSlots[idx][entry.second];
+            // The Aug 25 pool already stores logical column ids separately in
+            // each parity array, so no key translation is required here.
+            if (buffer) result[idx][entry.first] = buffer->size();
+        }
+    }
+    return result;
+}
+
 // Private methods
 
 int DynamicBufferPool::AllocateSlot() {
