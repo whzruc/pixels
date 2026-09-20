@@ -24,51 +24,68 @@
  */
 #include "PixelsFooterCache.h"
 #include "exception/InvalidArgumentException.h"
+#include <mutex>
+#include <shared_mutex>
 
 PixelsFooterCache::PixelsFooterCache()
 {
 }
 
-void PixelsFooterCache::putFileTail(const std::string &id, const pixels::fb::FileTail* fileTail)
+void PixelsFooterCache::putFileTail(const std::string &id, std::shared_ptr<ByteBuffer> buffer,
+                                     const pixels::fb::FileTail* fileTail)
 {
-    fileTailCacheMap[id] = fileTail;
+    std::unique_lock lock(mutex_);
+    fileTailCacheMap[id] = FileTailEntry{std::move(buffer), fileTail};
+}
+
+const pixels::fb::FileTail* PixelsFooterCache::putFileTailIfAbsent(
+        const std::string &id,
+        std::shared_ptr<ByteBuffer> buffer,
+        const pixels::fb::FileTail* fileTail)
+{
+    std::unique_lock lock(mutex_);
+    // emplace does nothing if key already exists, returning the existing entry.
+    auto [it, inserted] = fileTailCacheMap.emplace(id, FileTailEntry{std::move(buffer), fileTail});
+    return it->second.fileTail;
 }
 
 const pixels::fb::FileTail* PixelsFooterCache::getFileTail(const std::string &id)
 {
-    if (fileTailCacheMap.find(id) != fileTailCacheMap.end())
+    std::shared_lock lock(mutex_);
+    auto it = fileTailCacheMap.find(id);
+    if (it != fileTailCacheMap.end())
     {
-        return fileTailCacheMap[id];
+        return it->second.fileTail;
     }
-    else
-    {
-        throw InvalidArgumentException("No such a FileTail id.");
-    }
-}
-
-void PixelsFooterCache::putRGFooter(const std::string &id, const pixels::fb::RowGroupFooter* footer)
-{
-    rowGroupFooterCacheMap[id] = footer;
+    throw InvalidArgumentException("No such a FileTail id.");
 }
 
 bool PixelsFooterCache::containsFileTail(const std::string &id)
 {
+    std::shared_lock lock(mutex_);
     return fileTailCacheMap.find(id) != fileTailCacheMap.end();
+}
+
+void PixelsFooterCache::putRGFooter(const std::string &id, std::shared_ptr<ByteBuffer> buffer,
+                                     const pixels::fb::RowGroupFooter* footer)
+{
+    std::unique_lock lock(mutex_);
+    rowGroupFooterCacheMap[id] = RGFooterEntry{std::move(buffer), footer};
 }
 
 const pixels::fb::RowGroupFooter* PixelsFooterCache::getRGFooter(const std::string &id)
 {
-    if (rowGroupFooterCacheMap.find(id) != rowGroupFooterCacheMap.end())
+    std::shared_lock lock(mutex_);
+    auto it = rowGroupFooterCacheMap.find(id);
+    if (it != rowGroupFooterCacheMap.end())
     {
-        return rowGroupFooterCacheMap[id];
+        return it->second.rgFooter;
     }
-    else
-    {
-        throw InvalidArgumentException("No such a RGFooter id.");
-    }
+    throw InvalidArgumentException("No such a RGFooter id.");
 }
 
 bool PixelsFooterCache::containsRGFooter(const std::string &id)
 {
+    std::shared_lock lock(mutex_);
     return rowGroupFooterCacheMap.find(id) != rowGroupFooterCacheMap.end();
 }

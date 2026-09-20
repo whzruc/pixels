@@ -39,6 +39,10 @@ int PixelsFilter::CompareAvx2(void *data, T constant)
         {
             mask = _mm256_cmpeq_epi32(vector, constants);
             return _mm256_movemask_ps((__m256) mask);
+        } else if constexpr(std::is_same<OP, duckdb::NotEquals>())
+        {
+            mask = _mm256_cmpeq_epi32(vector, constants);
+            return ~_mm256_movemask_ps((__m256) mask);
         } else if constexpr(std::is_same<OP, duckdb::LessThan>())
         {
             mask = _mm256_cmpgt_epi32(constants, vector);
@@ -69,6 +73,13 @@ int PixelsFilter::CompareAvx2(void *data, T constant)
             mask = _mm256_cmpeq_epi64(vector_next, constants);
             result += _mm256_movemask_pd((__m256d) mask) << 4;
             return result;
+        } else if constexpr(std::is_same<OP, duckdb::NotEquals>())
+        {
+            mask = _mm256_cmpeq_epi64(vector, constants);
+            result = _mm256_movemask_pd((__m256d) mask);
+            mask = _mm256_cmpeq_epi64(vector_next, constants);
+            result += _mm256_movemask_pd((__m256d) mask) << 4;
+            return ~result;
         } else if constexpr(std::is_same<OP, duckdb::LessThan>())
         {
             mask = _mm256_cmpgt_epi64(constants, vector);
@@ -110,6 +121,11 @@ void PixelsFilter::TemplatedFilterOperation(std::shared_ptr <ColumnVector> vecto
                                             std::shared_ptr <TypeDescription> type)
 {
     T constant_value = constant.template GetValueUnsafe<T>();
+    // The filter mask is cumulative across predicates: only narrow it (logical AND),
+    // never resurrect a row that an earlier predicate already filtered out. Rows that
+    // are already masked out must be skipped, because column readers (e.g. the string
+    // reader) do not populate their slots for filtered-out rows, so the underlying data
+    // there is stale/garbage and must not be dereferenced.
     switch (type->getCategory())
     {
         case TypeDescription::SHORT:
@@ -120,13 +136,14 @@ void PixelsFilter::TemplatedFilterOperation(std::shared_ptr <ColumnVector> vecto
 #ifdef  ENABLE_SIMD_FILTER
             for (; i < vector->length - vector->length % 8; i += 8) {
                 uint8_t mask = CompareAvx2<T, OP>(intColumnVector->intVector + i, constant_value);
-                filter_mask.setByteAligned(i, mask);
+                filter_mask.mask[i / 8] &= mask;
             }
 #endif
             for (; i < vector->length; i++)
             {
-                filter_mask.set(i, OP::Operation((T) intColumnVector->intVector[i],
-                                                 constant_value));
+                if (!filter_mask.get(i)) continue;
+                if (!OP::Operation((T) intColumnVector->intVector[i], constant_value))
+                    filter_mask.set(i, 0);
             }
             break;
         }
@@ -137,13 +154,14 @@ void PixelsFilter::TemplatedFilterOperation(std::shared_ptr <ColumnVector> vecto
 #ifdef ENABLE_SIMD_FILTER
             for (; i < vector->length - vector->length % 8; i += 8) {
                 uint8_t mask = CompareAvx2<T, OP>(longColumnVector->longVector + i, constant_value);
-                filter_mask.setByteAligned(i, mask);
+                filter_mask.mask[i / 8] &= mask;
             }
 #endif
             for (; i < vector->length; i++)
             {
-                filter_mask.set(i, OP::Operation((T) longColumnVector->longVector[i],
-                                                 constant_value));
+                if (!filter_mask.get(i)) continue;
+                if (!OP::Operation((T) longColumnVector->longVector[i], constant_value))
+                    filter_mask.set(i, 0);
             }
             break;
         }
@@ -154,13 +172,14 @@ void PixelsFilter::TemplatedFilterOperation(std::shared_ptr <ColumnVector> vecto
 #ifdef ENABLE_SIMD_FILTER
             for (; i < vector->length - vector->length % 8; i += 8) {
                 uint8_t mask = CompareAvx2<T, OP>(dateColumnVector->dates + i, constant_value);
-                filter_mask.setByteAligned(i, mask);
+                filter_mask.mask[i / 8] &= mask;
             }
 #endif
             for (; i < vector->length; i++)
             {
-                filter_mask.set(i, OP::Operation((T) dateColumnVector->dates[i],
-                                                 constant_value));
+                if (!filter_mask.get(i)) continue;
+                if (!OP::Operation((T) dateColumnVector->dates[i], constant_value))
+                    filter_mask.set(i, 0);
             }
             break;
         }
@@ -171,13 +190,14 @@ void PixelsFilter::TemplatedFilterOperation(std::shared_ptr <ColumnVector> vecto
 #ifdef ENABLE_SIMD_FILTER
             for (; i < vector->length - vector->length % 8; i += 8) {
                 uint8_t mask = CompareAvx2<T, OP>(decimalColumnVector->vector + i, constant_value);
-                filter_mask.setByteAligned(i, mask);
+                filter_mask.mask[i / 8] &= mask;
             }
 #endif
             for (; i < vector->length; i++)
             {
-                filter_mask.set(i, OP::Operation((T) decimalColumnVector->vector[i],
-                                                 constant_value));
+                if (!filter_mask.get(i)) continue;
+                if (!OP::Operation((T) decimalColumnVector->vector[i], constant_value))
+                    filter_mask.set(i, 0);
             }
             break;
         }
@@ -190,8 +210,10 @@ void PixelsFilter::TemplatedFilterOperation(std::shared_ptr <ColumnVector> vecto
             auto binaryColumnVector = std::static_pointer_cast<BinaryColumnVector>(vector);
             for (int i = 0; i < vector->length; i++)
             {
-                filter_mask.set(i, OP::Operation((duckdb::string_t) binaryColumnVector->vector[i],
-                                                 (duckdb::string_t) constant_value));
+                if (!filter_mask.get(i)) continue;
+                if (!OP::Operation((duckdb::string_t) binaryColumnVector->vector[i],
+                                   (duckdb::string_t) constant_value))
+                    filter_mask.set(i, 0);
             }
             break;
         }
@@ -271,6 +293,10 @@ void PixelsFilter::ApplyFilter(std::shared_ptr <ColumnVector> vector, duckdb::Ta
                     FilterOperationSwitch<duckdb::Equals>(
                             vector, constant_filter.constant, filterMask, type);
                     break;
+                case duckdb::ExpressionType::COMPARE_NOTEQUAL:
+                    FilterOperationSwitch<duckdb::NotEquals>(
+                            vector, constant_filter.constant, filterMask, type);
+                    break;
                 case duckdb::ExpressionType::COMPARE_LESSTHAN:
                     FilterOperationSwitch<duckdb::LessThan>(
                             vector, constant_filter.constant, filterMask, type);
@@ -298,6 +324,9 @@ void PixelsFilter::ApplyFilter(std::shared_ptr <ColumnVector> vector, duckdb::Ta
         case duckdb::TableFilterType::IS_NULL:
             // TODO: support is null
             break;
+        case duckdb::TableFilterType::OPTIONAL_FILTER:
+            // nothing to do
+            return;
         default:
             D_ASSERT(0);
             break;

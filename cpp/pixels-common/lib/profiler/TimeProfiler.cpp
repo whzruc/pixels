@@ -23,7 +23,9 @@
  * @create 2023-05-03
  */
 #include "profiler/TimeProfiler.h"
+#include "profiler/ProfilerSwitch.h"
 
+#include <iomanip>
 
 thread_local std::map<std::string, std::chrono::steady_clock::time_point>
 TimeProfiler::profiling;
@@ -42,12 +44,15 @@ TimeProfiler::TimeProfiler()
 
 void TimeProfiler::Start(const std::string &label)
 {
-    if constexpr(enableProfile)
+    if (!IsPixelsProfilerEnabled())
+    {
+        return;
+    }
     {
         if (profiling.find(label) != profiling.end())
         {
             throw InvalidArgumentException(
-                    "TimeProfiler::Start: The same label has already been started. ");
+                    "TimeProfiler::Start: The same label:" +label+" has already been started. ");
         }
         else if (label.size() == 0)
         {
@@ -63,7 +68,10 @@ void TimeProfiler::Start(const std::string &label)
 
 void TimeProfiler::End(const std::string &label)
 {
-    if constexpr(enableProfile)
+    if (!IsPixelsProfilerEnabled())
+    {
+        return;
+    }
     {
         if (profiling.find(label) == profiling.end())
         {
@@ -93,7 +101,10 @@ void TimeProfiler::End(const std::string &label)
 
 void TimeProfiler::Print()
 {
-    if constexpr(enableProfile)
+    if (!IsPixelsProfilerEnabled())
+    {
+        return;
+    }
     {
         for (auto iter: globalResult)
         {
@@ -130,6 +141,10 @@ int TimeProfiler::GetResultSize()
 
 void TimeProfiler::Collect()
 {
+    if (!IsPixelsProfilerEnabled())
+    {
+        return;
+    }
     std::unique_lock <std::mutex> parallel_lock(lock);
     for (auto iter: localResult)
     {
@@ -145,5 +160,45 @@ void TimeProfiler::Collect()
         }
     }
     localResult.clear();
+}
+
+void TimeProfiler::PrintSummary(const std::string& baseLabel,
+                                const std::vector<std::string>& labels,
+                                const std::string& title)
+{
+    if (!IsPixelsProfilerEnabled())
+    {
+        return;
+    }
+    {
+        std::unique_lock<std::mutex> parallel_lock(lock);
+        long baseValue = 0;
+        auto baseIter = globalResult.find(baseLabel);
+        if (baseIter != globalResult.end())
+        {
+            baseValue = baseIter->second;
+        }
+
+        std::cout << "\n=== " << title << " ===" << std::endl;
+        std::cout << "label,thread_time_s,base_ratio_pct" << std::endl;
+        auto oldFlags = std::cout.flags();
+        auto oldPrecision = std::cout.precision();
+        std::cout << std::fixed << std::setprecision(6);
+        for (const auto& label : labels)
+        {
+            long value = 0;
+            auto iter = globalResult.find(label);
+            if (iter != globalResult.end())
+            {
+                value = iter->second;
+            }
+            double seconds = 1.0 * value / 1000000000.0;
+            double ratio = baseValue > 0 ? (100.0 * value / baseValue) : 0.0;
+            std::cout << label << "," << seconds << "," << ratio << std::endl;
+        }
+        std::cout << "base_total," << (1.0 * baseValue / 1000000000.0) << ",100.000000" << std::endl;
+        std::cout.flags(oldFlags);
+        std::cout.precision(oldPrecision);
+    }
 }
 

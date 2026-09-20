@@ -23,8 +23,50 @@
  * @create 2023-03-08
  */
 #include "physical/scheduler/NoopScheduler.h"
+
+#include <pixels_generated.h>
+#include <physical/ThreadContext.h>
+
 #include "exception/InvalidArgumentException.h"
 #include "physical/io/PhysicalLocalReader.h"
+#include "profiler/TimeProfiler.h"
+
+namespace
+{
+    bool BufferIdxDebugEnabled()
+    {
+        try
+        {
+            return ConfigFactory::Instance().boolCheckProperty("pixels.debug.bufferidx");
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    int BufferIdxDebugThread()
+    {
+        try
+        {
+            return std::stoi(ConfigFactory::Instance().getProperty("pixels.debug.bufferidx.thread"));
+        }
+        catch (...)
+        {
+            return -1;
+        }
+    }
+
+    bool ShouldPrintBufferIdxDebug(int threadId)
+    {
+        if (!BufferIdxDebugEnabled())
+        {
+            return false;
+        }
+        int debugThread = BufferIdxDebugThread();
+        return debugThread < 0 || debugThread == threadId;
+    }
+}
 
 Scheduler *NoopScheduler::instance = nullptr;
 
@@ -48,6 +90,7 @@ std::vector <std::shared_ptr<ByteBuffer>>
 NoopScheduler::executeBatch(std::shared_ptr <PhysicalReader> reader, RequestBatch batch,
                             std::vector <std::shared_ptr<ByteBuffer>> reuseBuffers, long queryId)
 {
+    PROFILE_START("NoopScheduler.executeBatch.Total");
     auto requests = batch.getRequests();
     std::vector <std::shared_ptr<ByteBuffer>> results;
     results.resize(batch.getSize());
@@ -59,8 +102,36 @@ NoopScheduler::executeBatch(std::shared_ptr <PhysicalReader> reader, RequestBatc
         {
             Request request = requests[i];
             localReader->seek(request.start);
-            results.at(i) = localReader->readAsync(request.length, reuseBuffers.at(i), request.bufferId);
-        }
+            bool useStaticBufferPool = false;
+            try {
+                useStaticBufferPool = ConfigFactory::Instance().boolCheckProperty("pixel.enable.globalStaticBytebuffer");
+            } catch (...) {
+                useStaticBufferPool = false;
+            }
+
+            if (useStaticBufferPool && pixels::ThreadContext::HasContext())
+            {
+                int bufferIdx = ::BufferPool::GetNextBufferIdx();
+                if (ShouldPrintBufferIdxDebug(pixels::ThreadContext::GetThreadId()))
+                {
+                    std::cout << "[BufferIdxDebug] scheduler_submit"
+                              << " request_index=" << i
+                              << " thread=" << pixels::ThreadContext::GetThreadId()
+                              << " column=" << request.columnName
+                              << " bufferIdx=" << bufferIdx
+                              << " currBufferIdx=" << ::BufferPool::GetCurrentBufferIdx()
+                              << " nextBufferIdx=" << ::BufferPool::GetNextBufferIdx()
+                              << " start=" << request.start
+                              << " length=" << request.length
+                              << std::endl;
+                }
+                results.at(i) = localReader->readAsync(request.length, reuseBuffers.at(i), bufferIdx, request.columnName);
+            }
+            else
+            {
+                results.at(i) = localReader->readAsync(request.length, reuseBuffers.at(i), request.bufferId);
+            }
+            }
         localReader->readAsyncSubmit(batch.getSize());
     }
     else
@@ -81,6 +152,7 @@ NoopScheduler::executeBatch(std::shared_ptr <PhysicalReader> reader, RequestBatc
 
         }
     }
+    PROFILE_END("NoopScheduler.executeBatch.Total");
     return results;
 
 }

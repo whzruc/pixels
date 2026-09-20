@@ -87,8 +87,16 @@ public:
 
     void close() override;
 
+    std::string getFileName()
+    {
+        return fileName;
+    }
+
+    void nextRowGroup();
+
 private:
     std::vector <int64_t> bufferIds;
+
 
     void prepareRead();
 
@@ -135,6 +143,9 @@ private:
 
     // buffers of each chunk in this file, arranged by chunk's row group id and column id
     std::vector <std::shared_ptr<ByteBuffer>> chunkBuffers;
+    // Buffer index pinned at the first read() of this file; used for all subsequent row-group reads
+    // so that BufferPool::Switch() between files does not cause cross-file buffer aliasing.
+    int pixelsBufferIdx;
     // column readers for each target columns
     std::vector <std::shared_ptr<ColumnReader>> readers;
     std::vector <uint32_t> targetColumns;
@@ -142,6 +153,8 @@ private:
     std::vector<bool> resultColumnsEncoded;
     bool enableEncodedVector;
     std::vector<const pixels::fb::RowGroupFooter*> rowGroupFooters;
+    // Backing buffers for rowGroupFooters — keeps FlatBuffer memory alive.
+    std::vector<std::shared_ptr<ByteBuffer>> rowGroupFooterBuffers;
 
     int includedColumnNum; // the number of columns to read
     std::vector<const pixels::fb::Type*> includedColumnTypes;

@@ -34,6 +34,8 @@ set(pixels_common_cxx
 		lib/MergedRequest.cpp
 		include/profiler/TimeProfiler.h
 		lib/profiler/TimeProfiler.cpp
+		include/profiler/ProfilerSwitch.h
+		lib/profiler/ProfilerSwitch.cpp
 		include/profiler/CountProfiler.h
 		lib/profiler/CountProfiler.cpp
 		include/profiler/AbstractProfiler.h
@@ -50,6 +52,8 @@ set(pixels_common_cxx
 		lib/physical/natives/DirectUringRandomAccessFileNonFixed.cpp
 		include/utils/ColumnSizeCSVReader.h
 		lib/utils/ColumnSizeCSVReader.cpp
+		include/utils/ColumnSizeCSVWriter.h
+		lib/utils/ColumnSizeCSVWriter.cpp
 		include/physical/StorageArrayScheduler.h
 		lib/physical/StorageArrayScheduler.cpp
 		include/physical/natives/ByteOrder.h

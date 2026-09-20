@@ -39,7 +39,7 @@ void DateColumnVector::close()
 {
     if (!closed)
     {
-        if (encoding && dates != nullptr)
+        if (dates != nullptr && ownsData)
         {
             free (dates);
         }
@@ -142,7 +142,8 @@ void DateColumnVector::ensureSize(uint64_t size, bool preserveData)
         {
             std::copy (oldVector, oldVector + length, dates);
         }
-        delete[] oldVector;
+        if (ownsData) free(oldVector);
+        ownsData = true;
         memoryUsage += (long) sizeof (long) * (size - length);
         resize (size);
     }

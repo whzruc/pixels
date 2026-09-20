@@ -54,6 +54,10 @@ class BinaryColumnVector : public ColumnVector
 
   std::vector<std::string> str_vec;
 
+  // Byte size of the `vector` backing array, tracked so it can be returned to
+  // ColumnVectorBufferPool with the exact size it was acquired with.
+  size_t vectorBytes;
+
   /**
   * Use this constructor by default. All column vectors
   * should normally be the default size.
