@@ -27,6 +27,7 @@
 #include "pixels_extension.hpp"
 #include "PixelsScanFunction.hpp"
 #include "PixelsReadBindData.hpp"
+#include "ParquetPixelsScan.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/string_util.hpp"
@@ -126,6 +127,11 @@ namespace duckdb
         cinfo.name = "pixels_scan";
 
         catalog.CreateTableFunction(context, &cinfo);
+
+        // Register read_parquet_uring (io_uring + double-buffer)
+        auto pq_pixels_fun = ParquetPixelsScanFunction::GetFunctionSet();
+        CreateTableFunctionInfo pq_pixels_info(pq_pixels_fun);
+        catalog.CreateTableFunction(context, &pq_pixels_info);
 
         con.Commit();
 
