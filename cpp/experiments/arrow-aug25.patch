@@ -1,0 +1,74 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+new file mode 100644
+index 0000000..1157eb1
+--- /dev/null
++++ b/CMakeLists.txt
+@@ -0,0 +1,51 @@
++# Minimal Arrow Parquet build configuration
++# Only builds the Parquet library without full Arrow dependencies
++
++cmake_minimum_required(VERSION 3.16)
++
++# Don't create a project here, let the cpp subdirectory handle it
++# Just set options before including cpp
++
++# Arrow options - disable everything except Parquet
++set(ARROW_BUILD_STATIC ON CACHE BOOL "Build static libraries")
++set(ARROW_BUILD_SHARED OFF CACHE BOOL "Build shared libraries")
++set(ARROW_PARQUET ON CACHE BOOL "Build Parquet support")
++set(ARROW_WITH_SNAPPY ON CACHE BOOL "Build with Snappy compression")
++set(ARROW_WITH_ZLIB ON CACHE BOOL "Build with zlib compression")
++set(ARROW_WITH_LZ4 OFF CACHE BOOL "Build with LZ4 compression")
++set(ARROW_WITH_ZSTD OFF CACHE BOOL "Build with ZSTD compression")
++set(ARROW_WITH_BROTLI OFF CACHE BOOL "Build with Brotli compression")
++set(ARROW_WITH_BZ2 OFF CACHE BOOL "Build with BZ2 compression")
++
++# Disable unnecessary features
++set(ARROW_COMPUTE OFF CACHE BOOL "Build compute modules")
++set(ARROW_CSV OFF CACHE BOOL "Build CSV support")
++set(ARROW_DATASET OFF CACHE BOOL "Build dataset modules")
++set(ARROW_FILESYSTEM OFF CACHE BOOL "Build filesystem layer")
++set(ARROW_FLIGHT OFF CACHE BOOL "Build Flight RPC")
++set(ARROW_GANDIVA OFF CACHE BOOL "Build Gandiva")
++set(ARROW_HDFS OFF CACHE BOOL "Build HDFS support")
++set(ARROW_IPC ON CACHE BOOL "Build IPC support" FORCE)
++set(ARROW_JEMALLOC OFF CACHE BOOL "Build with jemalloc")
++set(ARROW_JSON OFF CACHE BOOL "Build JSON support")
++set(ARROW_ORC OFF CACHE BOOL "Build ORC support")
++set(ARROW_PLASMA OFF CACHE BOOL "Build Plasma")
++set(ARROW_PYTHON OFF CACHE BOOL "Build Python bindings")
++set(ARROW_S3 OFF CACHE BOOL "Build S3 support")
++set(ARROW_TENSORFLOW OFF CACHE BOOL "Build TensorFlow support")
++
++# Disable tests and benchmarks
++set(ARROW_BUILD_TESTS OFF CACHE BOOL "Build tests")
++set(ARROW_BUILD_BENCHMARKS OFF CACHE BOOL "Build benchmarks")
++set(ARROW_BUILD_EXAMPLES OFF CACHE BOOL "Build examples")
++set(ARROW_BUILD_INTEGRATION OFF CACHE BOOL "Build integration tests")
++
++# Use system dependencies where available, fall back to bundled
++set(ARROW_DEPENDENCY_SOURCE "AUTO" CACHE STRING "Dependency source")
++
++# Disable pedantic warnings for __int128 support
++set(ARROW_USE_NATIVE_INT128 ON CACHE BOOL "Use native __int128 type")
++add_compile_options(-Wno-pedantic)
++
++# Add the cpp subdirectory which contains the actual Arrow build
++add_subdirectory(cpp)
+diff --git a/cpp/src/arrow/io/CMakeLists.txt b/cpp/src/arrow/io/CMakeLists.txt
+index f7afbca..20ec07a 100644
+--- a/cpp/src/arrow/io/CMakeLists.txt
++++ b/cpp/src/arrow/io/CMakeLists.txt
+@@ -37,9 +37,9 @@ add_arrow_test(memory_test PREFIX "arrow-io")
+ 
+ add_arrow_benchmark(file_benchmark PREFIX "arrow-io")
+ 
+-if(NOT (${ARROW_SIMD_LEVEL} STREQUAL "NONE") AND NOT (${ARROW_SIMD_LEVEL} STREQUAL "NEON"
+-                                                     ))
+-  # This benchmark either requires SSE4.2 or ARMV8 SIMD to be enabled
++if(DEFINED ARROW_SIMD_LEVEL
++        AND NOT "${ARROW_SIMD_LEVEL}" STREQUAL "NONE"
++        AND NOT "${ARROW_SIMD_LEVEL}" STREQUAL "NEON")
+   add_arrow_benchmark(memory_benchmark PREFIX "arrow-io")
+ endif()
+ 
