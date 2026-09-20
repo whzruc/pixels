@@ -17,6 +17,9 @@
 #include <utility>
 
 #include "physical/natives/ByteBuffer.h"
+#ifdef PIXELS_ENABLE_SPDK
+#include <spdk/env.h>
+#endif
 
 
 /**
@@ -54,7 +57,18 @@ ByteBuffer::ByteBuffer(uint8_t *arr, uint32_t size, bool allocated_by_new)
     name = "";
     fromOtherBB = false;
     this->allocated_by_new = allocated_by_new;
+    allocType = allocated_by_new ? AllocType::BY_NEW : AllocType::BY_MALLOC;
+}
 
+ByteBuffer::ByteBuffer(uint8_t *arr, uint32_t size, AllocType allocType_)
+{
+    buf = arr;
+    bufSize = size;
+    resetPosition();
+    name = "";
+    fromOtherBB = false;
+    allocated_by_new = (allocType_ == AllocType::BY_NEW);
+    allocType = allocType_;
 }
 
 ByteBuffer::ByteBuffer(ByteBuffer &bb, uint32_t startId, uint32_t length)
@@ -92,22 +106,26 @@ uint32_t ByteBuffer::bytesRemaining()
 }
 
 
+static void freeByAllocType(uint8_t* buf, ByteBuffer::AllocType type)
+{
+    if (buf == nullptr) return;
+    if (type == ByteBuffer::AllocType::BY_NEW)
+        delete[] buf;
+    else if (type == ByteBuffer::AllocType::BY_MALLOC)
+        free(buf);
+    else if (type == ByteBuffer::AllocType::BY_SPDK_DMA) {
+#ifdef PIXELS_ENABLE_SPDK
+        spdk_dma_free(buf);
+#endif
+    }
+}
+
 void ByteBuffer::clear()
 {
     resetPosition();
     if (!fromOtherBB)
     {
-        if (buf != nullptr)
-        {
-            if (allocated_by_new)
-            {
-                delete[] buf;
-            }
-            else
-            {
-                free(buf);
-            }
-        }
+        freeByAllocType(buf, allocType);
     }
     buf = nullptr;
     bufSize = 0;
@@ -430,17 +448,7 @@ ByteBuffer::~ByteBuffer()
 {
     if (!fromOtherBB)
     {
-        if (buf != nullptr)
-        {
-            if (allocated_by_new)
-            {
-                delete[] buf;
-            }
-            else
-            {
-                free(buf);
-            }
-        }
+        freeByAllocType(buf, allocType);
     }
     buf = nullptr;
 }
