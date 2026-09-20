@@ -50,6 +50,13 @@ public:
     }
 
     int get(const std::string &columnName);
+    
+    /**
+     * Get all column sizes as a map
+     */
+    const std::unordered_map<std::string, int>& getAllColumnSizes() const {
+        return colSize;
+    }
 
 private:
     std::unordered_map<std::string, int> colSize;

@@ -46,11 +46,25 @@ set(pixels_common_cxx
 		lib/physical/BufferPool.cpp
 		include/physical/natives/DirectUringRandomAccessFile.h
 		lib/physical/natives/DirectUringRandomAccessFile.cpp
+		include/physical/natives/DirectUringRandomAccessFileNonFixed.h
+		lib/physical/natives/DirectUringRandomAccessFileNonFixed.cpp
 		include/utils/ColumnSizeCSVReader.h
 		lib/utils/ColumnSizeCSVReader.cpp
 		include/physical/StorageArrayScheduler.h
 		lib/physical/StorageArrayScheduler.cpp
 		include/physical/natives/ByteOrder.h
+		lib/physical/DynamicBufferPool.cpp
+		include/physical/DynamicBufferPool.h
+		lib/physical/natives/DirectUringRandomAccessFileDynamic.cpp
+		include/physical/natives/DirectUringRandomAccessFileDynamic.h
+		lib/physical/GlobalByteBufferPool.cpp
+		include/physical/GlobalByteBufferPool.h
+		lib/physical/GlobalStaticBufferPool.cpp
+		include/physical/GlobalStaticBufferPool.h
+		lib/physical/ThreadContext.cpp
+		include/physical/ThreadContext.h
+		lib/physical/natives/DirectUringRandomAccessFileStatic.cpp
+		include/physical/natives/DirectUringRandomAccessFileStatic.h
 )
 
 set(FBS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../proto/pixels.fbs")
