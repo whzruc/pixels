@@ -16,6 +16,16 @@ set(EXTENSION_SOURCES
         pixels-duckdb/PixelsScanFunction.cpp
 )
 
+# Forward SPDK toggle to sub-directories.
+# Run cmake with -DPIXELS_ENABLE_SPDK=ON to compile SPDK support.
+option(PIXELS_ENABLE_SPDK "Build with SPDK user-space NVMe driver support" OFF)
+if(PIXELS_ENABLE_SPDK)
+    add_definitions(-DPIXELS_ENABLE_SPDK)
+    message(STATUS "[pixels] SPDK support: ON")
+else()
+    message(STATUS "[pixels] SPDK support: OFF (pass -DPIXELS_ENABLE_SPDK=ON to enable)")
+endif()
+
 add_subdirectory(pixels-common)
 add_subdirectory(pixels-core)
 add_subdirectory(pixels-cli)

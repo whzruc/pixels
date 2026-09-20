@@ -122,3 +122,45 @@ target_link_libraries(pixels-common
 		${LIBURING_LIB}
 		pthread  # liburing usually depends on pthread
 )
+
+# ── Optional SPDK support ────────────────────────────────────────────────────
+# Enable with:  cmake -DPIXELS_ENABLE_SPDK=ON ...
+# Requires SPDK + DPDK to be installed (e.g. /usr/local/lib/libspdk_nvme.so).
+# Also requires hugepages and VFIO-bound NVMe devices at runtime.
+option(PIXELS_ENABLE_SPDK "Build with SPDK user-space NVMe driver support" OFF)
+
+if(PIXELS_ENABLE_SPDK)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SPDK_NVME    REQUIRED spdk_nvme)
+    pkg_check_modules(SPDK_ENV     REQUIRED spdk_env_dpdk)
+
+    message(STATUS "SPDK support enabled")
+    message(STATUS "  SPDK_NVME_LIBRARIES: ${SPDK_NVME_LIBRARIES}")
+    message(STATUS "  SPDK_ENV_LIBRARIES:  ${SPDK_ENV_LIBRARIES}")
+
+    add_definitions(-DPIXELS_ENABLE_SPDK)
+
+    target_sources(pixels-common PRIVATE
+        lib/physical/natives/DirectSpdkRandomAccessFile.cpp
+        lib/physical/SpdkBufferPool.cpp
+    )
+
+    target_include_directories(pixels-common PRIVATE
+        ${SPDK_NVME_INCLUDE_DIRS}
+        ${SPDK_ENV_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(pixels-common
+        PRIVATE
+        ${SPDK_NVME_LINK_LIBRARIES}
+        ${SPDK_ENV_LINK_LIBRARIES}
+        # SPDK uses UUID library
+        uuid
+    )
+
+    # SPDK libraries are in /usr/local/lib; add rpath so the .so finds them
+    set_target_properties(pixels-common PROPERTIES
+        INSTALL_RPATH "/usr/local/lib"
+        BUILD_RPATH   "/usr/local/lib"
+    )
+endif() # PIXELS_ENABLE_SPDK
