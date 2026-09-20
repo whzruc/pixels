@@ -76,6 +76,7 @@ void IntColumnReader::read(std::shared_ptr<ByteBuffer> input,
     // if int
     columnVector->intVector =
         (int *) (input->getPointer() + input->getReadPos());
+    columnVector->ownsData = false;
     input->setReadPos(input->getReadPos() + size * sizeof(int32_t));
   }
 }

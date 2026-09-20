@@ -38,7 +38,8 @@ public:
 
     explicit RequestBatch(int capacity);
 
-    void add(uint64_t queryId, uint64_t start, uint64_t length, int64_t bufferId = -1);
+    void add(uint64_t queryId, uint64_t start, uint64_t length, std::string columnName,int64_t bufferId = -1);
+    void add(uint64_t queryId, uint64_t start, uint64_t length,int64_t bufferId = -1);
 
     void add(Request request);
 

@@ -31,6 +31,7 @@
 #include "exception/InvalidArgumentException.h"
 #include "profiler/AbstractProfiler.h"
 #include <chrono>
+#include <vector>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -56,6 +57,10 @@ public:
     void Collect();
 
     int GetResultSize();
+
+    void PrintSummary(const std::string& baseLabel,
+                      const std::vector<std::string>& labels,
+                      const std::string& title);
 
 private:
     TimeProfiler();

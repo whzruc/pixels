@@ -39,7 +39,7 @@ void LongColumnVector::close()
     if (!closed)
     {
         ColumnVector::close ();
-        if (encoding && longVector != nullptr)
+        if (longVector != nullptr && ownsData)
         {
             free (longVector);
         }
@@ -131,7 +131,8 @@ void LongColumnVector::ensureSize(uint64_t size, bool preserveData)
         {
             std::copy (oldVector, oldVector + length, longVector);
         }
-        delete[] oldVector;
+        if (ownsData) free(oldVector);
+        ownsData = true;
         memoryUsage += (long) sizeof (long) * (size - length);
         resize (size);
     }

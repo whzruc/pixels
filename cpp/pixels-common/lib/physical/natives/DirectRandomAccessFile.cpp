@@ -89,23 +89,34 @@ void DirectRandomAccessFile::close()
 
 std::shared_ptr <ByteBuffer> DirectRandomAccessFile::readFully(int len)
 {
+    PROFILE_START("Pixels.Pread.ReadFully.Total");
     if (enableDirect)
     {
+        PROFILE_START("Pixels.Pread.ReadFully.Allocate");
         auto directBuffer = directIoLib->allocateDirectBuffer(len);
+        PROFILE_END("Pixels.Pread.ReadFully.Allocate");
+        PROFILE_START("Pixels.Pread.ReadFully.DirectIO");
         auto buffer = directIoLib->read(fd, offset, directBuffer, len);
+        PROFILE_END("Pixels.Pread.ReadFully.DirectIO");
         seek(offset + len);
         largeBuffers.emplace_back(directBuffer);
+        PROFILE_END("Pixels.Pread.ReadFully.Total");
         return buffer;
     }
     else
     {
+        PROFILE_START("Pixels.Pread.ReadFully.Allocate");
         auto buffer = allocator->allocate(len);
+        PROFILE_END("Pixels.Pread.ReadFully.Allocate");
+        PROFILE_START("Pixels.Pread.ReadFully.Syscall");
         if (pread(fd, buffer->getPointer(), len, offset) == -1)
         {
             throw std::runtime_error("pread fail");
         }
+        PROFILE_END("Pixels.Pread.ReadFully.Syscall");
         seek(offset + len);
         largeBuffers.emplace_back(buffer);
+        PROFILE_END("Pixels.Pread.ReadFully.Total");
         return buffer;
     }
 
@@ -113,20 +124,30 @@ std::shared_ptr <ByteBuffer> DirectRandomAccessFile::readFully(int len)
 
 std::shared_ptr <ByteBuffer> DirectRandomAccessFile::readFully(int len, std::shared_ptr <ByteBuffer> bb)
 {
+    PROFILE_START("Pixels.Pread.ReadFullyReuse.Total");
     if (enableDirect)
     {
+        PROFILE_START("Pixels.Pread.ReadFullyReuse.DirectIO");
         auto buffer = directIoLib->read(fd, offset, bb, len);
+        PROFILE_END("Pixels.Pread.ReadFullyReuse.DirectIO");
         seek(offset + len);
+        PROFILE_END("Pixels.Pread.ReadFullyReuse.Total");
         return buffer;
     }
     else
     {
+        PROFILE_START("Pixels.Pread.ReadFullyReuse.Syscall");
         if (pread(fd, bb->getPointer(), len, offset) == -1)
         {
             throw std::runtime_error("pread fail");
         }
+        PROFILE_END("Pixels.Pread.ReadFullyReuse.Syscall");
         seek(offset + len);
-        return std::make_shared<ByteBuffer>(*bb, 0, len);
+        PROFILE_START("Pixels.Pread.ReadFullyReuse.WrapBuffer");
+        auto buffer = std::make_shared<ByteBuffer>(*bb, 0, len);
+        PROFILE_END("Pixels.Pread.ReadFullyReuse.WrapBuffer");
+        PROFILE_END("Pixels.Pread.ReadFullyReuse.Total");
+        return buffer;
     }
 }
 
@@ -182,20 +203,26 @@ char DirectRandomAccessFile::readChar()
 
 void DirectRandomAccessFile::populatedBuffer()
 {
+    PROFILE_START("Pixels.Pread.Metadata.Total");
     if (enableDirect)
     {
+        PROFILE_START("Pixels.Pread.Metadata.DirectIO");
         smallBuffer = directIoLib->read(fd, offset, smallDirectBuffer, fsBlockSize);
+        PROFILE_END("Pixels.Pread.Metadata.DirectIO");
         bufferValid = true;
     }
     else
     {
+        PROFILE_START("Pixels.Pread.Metadata.Syscall");
         if (pread(fd, smallBuffer->getPointer(), fsBlockSize, offset) == -1)
         {
             throw std::runtime_error("pread fail");
         }
+        PROFILE_END("Pixels.Pread.Metadata.Syscall");
         smallBuffer->resetPosition();
         bufferValid = true;
     }
+    PROFILE_END("Pixels.Pread.Metadata.Total");
 
 }
 

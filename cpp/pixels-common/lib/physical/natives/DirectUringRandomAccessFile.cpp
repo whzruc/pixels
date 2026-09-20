@@ -23,6 +23,7 @@
  * @create 2023-05-28
  */
 #include "physical/natives/DirectUringRandomAccessFile.h"
+#include "profiler/TimeProfiler.h"
 
 thread_local struct io_uring *DirectUringRandomAccessFile::ring = nullptr;
 thread_local bool DirectUringRandomAccessFile::isRegistered = false;
@@ -64,7 +65,6 @@ void DirectUringRandomAccessFile::RegisterBufferFromPool(std::vector <uint32_t> 
         isRegistered = true;
     }
 }
-
 
 void DirectUringRandomAccessFile::RegisterBuffer(std::vector <std::shared_ptr<ByteBuffer>> buffers)
 {
@@ -146,6 +146,8 @@ DirectUringRandomAccessFile::readAsync(int length, std::shared_ptr <ByteBuffer> 
         auto bb = std::make_shared<ByteBuffer>(*buffer,
                                                offset - fileOffsetAligned, length);
         seek(offset + length);
+        unsigned int pending = io_uring_sq_ready(ring);
+        // std::cout << "Pending in SQ: " << pending << std::endl;
         return bb;
     }
     else
@@ -165,26 +167,34 @@ DirectUringRandomAccessFile::readAsync(int length, std::shared_ptr <ByteBuffer> 
 
 void DirectUringRandomAccessFile::readAsyncSubmit(int size)
 {
+    PROFILE_START("Uring.AsyncSubmit.Total");
     int ret = io_uring_submit(ring);
+    PROFILE_END("Uring.AsyncSubmit.Total");
     if (ret != size)
     {
+        std::cout<<"ret: "<<ret<<" size:"<<size<<std::endl;
         throw InvalidArgumentException("DirectUringRandomAccessFile::readAsyncSubmit: submit fails");
     }
 }
 
 void DirectUringRandomAccessFile::readAsyncComplete(int size)
 {
+    PROFILE_START("Uring.AsyncComplete.Total");
     // Important! We cannot write the code as io_uring_wait_cqe_nr(ring, &cqe, iovecSize).
     // The reason is unclear, but some random bugs would happen. It takes me nearly a week to find this bug
     struct io_uring_cqe *cqe;
     for (int i = 0; i < size; i++)
     {
+        PROFILE_START("Uring.AsyncComplete.WaitCQE");
         if (io_uring_wait_cqe_nr(ring, &cqe, 1) != 0)
         {
             throw InvalidArgumentException("DirectUringRandomAccessFile::readAsyncComplete: wait cqe fails");
         }
+        PROFILE_END("Uring.AsyncComplete.WaitCQE");
+        PROFILE_START("Uring.AsyncComplete.ProcessCQE");
         io_uring_cqe_seen(ring, cqe);
+        PROFILE_END("Uring.AsyncComplete.ProcessCQE");
     }
+    PROFILE_END("Uring.AsyncComplete.Total");
 }
-
 

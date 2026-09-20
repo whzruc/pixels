@@ -73,5 +73,7 @@ void LongColumnReader::read(std::shared_ptr<ByteBuffer> input,
   {
     columnVector->longVector =
         (int64_t *) (input->getPointer() + input->getReadPos());
+    columnVector->ownsData = false;
+    input->setReadPos(input->getReadPos() + size * sizeof(int64_t));
   }
 }

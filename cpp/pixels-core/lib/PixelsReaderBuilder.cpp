@@ -24,6 +24,7 @@
  */
 #include "PixelsReaderBuilder.h"
 #include "utils/Endianness.h"
+#include "profiler/TimeProfiler.h"
 
 PixelsReaderBuilder::PixelsReaderBuilder()
 {
@@ -58,8 +59,9 @@ std::shared_ptr<PixelsReader> PixelsReaderBuilder::build()
     // get PhysicalReader
     std::shared_ptr<PhysicalReader> fsReader =
             PhysicalReaderUtil::newPhysicalReader (builderStorage, builderPath);
-    // try to get file tail from cache
-    std::string fileName = fsReader->getName ();
+    // Use full path as cache key so files with the same name on different SSDs
+    // don't collide. getName() only returns the basename.
+    std::string fileName = builderPath;
     const pixels::fb::FileTail* fileTail;
     if (builderPixelsFooterCache != nullptr && builderPixelsFooterCache->containsFileTail (fileName))
     {
@@ -76,7 +78,9 @@ std::shared_ptr<PixelsReader> PixelsReaderBuilder::build()
         fsReader->seek (fileLen - (long) sizeof (long));
         // get FileTailOffset
 
+        PROFILE_START("Pixels.Metadata.FileTailOffsetRead");
         long fileTailOffset = fsReader->readLong ();
+        PROFILE_END("Pixels.Metadata.FileTailOffsetRead");
         if (Endianness::isLittleEndian ())
         {
             fileTailOffset = (long) __builtin_bswap64 (fileTailOffset);
@@ -84,7 +88,9 @@ std::shared_ptr<PixelsReader> PixelsReaderBuilder::build()
 
         int fileTailLength = (int) (fileLen - fileTailOffset - sizeof (long));
         fsReader->seek (fileTailOffset);
+        PROFILE_START("Pixels.Metadata.FileTailRead");
         std::shared_ptr<ByteBuffer> fileTailBuffer = fsReader->readFully (fileTailLength);
+        PROFILE_END("Pixels.Metadata.FileTailRead");
         fileTail = pixels::fb::GetFileTail(fileTailBuffer->getPointer());
         if (fileTail == nullptr)
         {
@@ -92,7 +98,10 @@ std::shared_ptr<PixelsReader> PixelsReaderBuilder::build()
         }
         if (builderPixelsFooterCache != nullptr)
         {
-            builderPixelsFooterCache->putFileTail (fileName, fileTail);
+            // putFileTailIfAbsent: atomic check-and-insert under the cache lock.
+            // If another thread raced and inserted first, we get back their pointer
+            // (backed by their buffer). Our local fileTailBuffer is discarded safely.
+            fileTail = builderPixelsFooterCache->putFileTailIfAbsent(fileName, fileTailBuffer, fileTail);
         }
     }
 

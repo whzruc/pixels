@@ -77,6 +77,8 @@ public:
      * later and nulls added.
      */
     uint8_t *isNull;
+    bool ownsIsNull;  // false when isNull points into external buffer (e.g. ByteBuffer)
+    bool ownsData;    // false when the subclass data pointer points into external buffer
 
     // If the whole column vector has no nulls, this is true, otherwise false.
     bool noNulls;

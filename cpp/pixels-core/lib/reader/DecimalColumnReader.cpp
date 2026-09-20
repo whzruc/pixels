@@ -68,6 +68,7 @@ void DecimalColumnReader::read(std::shared_ptr <ByteBuffer> input,
     setValid(input, pixelStride, vector, pixelId, hasNull);
 
     columnVector->vector = (long *) (input->getPointer() + input->getReadPos());
+    columnVector->ownsData = false;
     input->setReadPos(input->getReadPos() + size * sizeof(long));
 
 

@@ -46,7 +46,7 @@ void TimestampColumnVector::close()
     if (!closed)
     {
         ColumnVector::close ();
-        if (encoding && this->times != nullptr)
+        if (this->times != nullptr && ownsData)
         {
             free (this->times);
         }
@@ -135,7 +135,8 @@ void TimestampColumnVector::ensureSize(uint64_t size, bool preserveData)
         {
             std::copy (oldVector, oldVector + length, times);
         }
-        delete[] oldVector;
+        if (ownsData) free(oldVector);
+        ownsData = true;
         memoryUsage += (long) sizeof (long) * (size - length);
         resize (size);
     }
