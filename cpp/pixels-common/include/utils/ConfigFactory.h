@@ -45,6 +45,12 @@ public:
 
     bool boolCheckProperty(std::string key);
 
+    /**
+     * Reads a boolean property; returns defaultValue if the key is missing
+     * or the value is neither "true" nor "false".
+     */
+    bool getBoolProperty(const std::string &key, bool defaultValue);
+
     std::string getPixelsDirectory();
 
     std::string getPixelsSourceDirectory();
