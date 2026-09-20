@@ -26,7 +26,7 @@
 #define PIXELS_REQUEST_H
 
 #include <iostream>
-
+#include <string>
 class Request
 {
 public:
@@ -34,8 +34,10 @@ public:
     uint64_t queryId;
     uint64_t start;
     uint64_t length;
-
+    std::string columnName;
     Request(uint64_t queryId_, uint64_t start_, uint64_t length_,
+            int64_t bufferId = -1);
+    Request(uint64_t queryId_, uint64_t start_, uint64_t length_,std::string columnName,
             int64_t bufferId = -1);
 
     int hashCode();

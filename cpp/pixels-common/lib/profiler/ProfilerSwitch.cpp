@@ -5,8 +5,8 @@
  *
  * Pixels is free software: you can redistribute it and/or modify
  * it under the terms of the Affero GNU General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
  *
  * Pixels is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -18,20 +18,26 @@
  * <https://www.gnu.org/licenses/>.
  */
 
-/*
- * @author liyu
- * @create 2023-05-03
- */
-#ifndef DUCKDB_ABSTRACTPROFILER_H
-#define DUCKDB_ABSTRACTPROFILER_H
+#include "profiler/ProfilerSwitch.h"
 
-class AbstractProfiler
+#include "utils/ConfigFactory.h"
+
+#include <mutex>
+
+namespace
 {
-public:
-    virtual void Print() = 0;
+bool g_pixelsProfilerEnabled = true;
+std::once_flag g_pixelsProfilerInitFlag;
 
-    virtual void Reset() = 0;
+void InitPixelsProfilerSwitch()
+{
+    g_pixelsProfilerEnabled =
+            ConfigFactory::Instance().getBoolProperty("pixel.enable.profiler", false);
+}
+} // namespace
 
-};
-
-#endif //DUCKDB_ABSTRACTPROFILER_H
+bool IsPixelsProfilerEnabled()
+{
+    std::call_once(g_pixelsProfilerInitFlag, InitPixelsProfilerSwitch);
+    return g_pixelsProfilerEnabled;
+}

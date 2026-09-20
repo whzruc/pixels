@@ -69,6 +69,7 @@ void DateColumnReader::read(std::shared_ptr <ByteBuffer> input,
     else
     {
         columnVector->dates = (int *) (input->getPointer() + input->getReadPos());
+        columnVector->ownsData = false;
         input->setReadPos(input->getReadPos() + size * sizeof(int));
     }
 }

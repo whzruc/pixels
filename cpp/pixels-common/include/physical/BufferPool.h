@@ -32,8 +32,10 @@
 #include "physical/natives/DirectIoLib.h"
 #include "exception/InvalidArgumentException.h"
 #include "utils/ColumnSizeCSVReader.h"
+#include "physical/GlobalStaticBufferPool.h"
 #include <map>
 #include <cassert>
+#include <atomic>
 
 // when allocating buffer pool, we use the size of the first pxl file. Consider that
 // the remaining pxl file has larger size than the first file, we allocate some extra
@@ -51,11 +53,24 @@ public:
 
     static std::shared_ptr <ByteBuffer> GetBuffer(uint32_t colId);
 
+    static std::shared_ptr <ByteBuffer> GetBufferAt(uint32_t colId, int bufIdx);
+
     static int64_t GetBufferId(uint32_t index);
+
+    static int64_t GetBufferIdAt(uint32_t index, int bufIdx);
 
     static void Switch();
 
     static void Reset();
+
+    static int GetCurrentBufferIdx()
+    {
+        return currBufferIdx;
+    }
+    static int GetNextBufferIdx()
+    {
+        return  nextBufferIdx;
+    }
 
 private:
     BufferPool() = default;
@@ -66,7 +81,7 @@ private:
     static thread_local bool isInitialized;
     static thread_local std::map<uint32_t, std::shared_ptr < ByteBuffer>>
     buffers[2];
-    static std::shared_ptr <DirectIoLib> directIoLib;
+    static thread_local std::shared_ptr <DirectIoLib> directIoLib;
     static thread_local int currBufferIdx;
     static thread_local int nextBufferIdx;
     friend class DirectUringRandomAccessFile;

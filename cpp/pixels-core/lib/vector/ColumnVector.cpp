@@ -34,6 +34,8 @@ ColumnVector::ColumnVector(uint64_t len, bool encoding)
     memoryUsage = len + sizeof(int) * 3 + 4;
     closed = false;
     isNull = new uint8_t[length]();
+    ownsIsNull = true;
+    ownsData = true;
     noNulls = true;
     posix_memalign(reinterpret_cast<void **>(&isValid), 64, ceil(1.0 * len / 64) * sizeof(uint64_t));
 }
@@ -44,11 +46,15 @@ void ColumnVector::close()
     {
         writeIndex = 0;
         closed = true;
-        // TODO: reset other variables
         if (isValid != nullptr)
         {
             free(isValid);
             isValid = nullptr;
+        }
+        if (isNull != nullptr && ownsIsNull)
+        {
+            delete[] isNull;
+            isNull = nullptr;
         }
     }
 }
@@ -126,11 +132,15 @@ void ColumnVector::ensureSize(uint64_t size, bool preserveData)
     {
         uint8_t *oldArray = this->isNull;
         this->isNull = new uint8_t[size]();
-        if (preserveData && !this->noNulls)
+        if (preserveData && !this->noNulls && ownsIsNull)
         {
             std::copy(oldArray, oldArray + this->length, this->isNull);
         }
-        delete[] oldArray;
+        if (ownsIsNull)
+        {
+            delete[] oldArray;
+        }
+        ownsIsNull = true;
         resize(size);
     }
 }

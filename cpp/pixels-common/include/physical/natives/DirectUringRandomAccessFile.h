@@ -35,7 +35,8 @@
 class DirectUringRandomAccessFile : public DirectRandomAccessFile
 {
 public:
-    explicit DirectUringRandomAccessFile(const std::string &file);
+    explicit
+    DirectUringRandomAccessFile(const std::string &file);
 
     static void RegisterBuffer(std::vector <std::shared_ptr<ByteBuffer>> buffers);
 
@@ -52,6 +53,11 @@ public:
     void readAsyncComplete(int size);
 
     ~DirectUringRandomAccessFile();
+
+    // Added for ParquetPixelsScan: expose the thread-local io_uring ring so that
+    // external code can submit SQEs directly without going through the instance API.
+    // This is read-only access; the ring is still owned and managed by this class.
+    static struct io_uring* GetRing() { return ring; }
 
 private:
     static thread_local struct io_uring *ring;

@@ -95,8 +95,7 @@ void DecimalColumnVector::close()
     if (!closed)
     {
         ColumnVector::close ();
-        if (physical_type_ == PhysicalType::INT16 ||
-            physical_type_ == PhysicalType::INT32)
+        if (vector != nullptr && ownsData)
         {
             free (vector);
         }
@@ -173,7 +172,11 @@ void DecimalColumnVector::ensureSize(uint64_t size, bool preserveData)
     {
         std::copy (oldVector, oldVector + length, vector);
     }
-    delete[] oldVector;
+    if (oldVector != nullptr && ownsData)
+    {
+        free (oldVector);
+    }
+    ownsData = true;
     memoryUsage += (long) sizeof (int) * (size - length);
     resize (size);
 }

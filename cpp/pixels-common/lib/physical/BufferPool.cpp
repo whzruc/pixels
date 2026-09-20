@@ -23,6 +23,10 @@
  * @create 2023-05-25
  */
 #include "physical/BufferPool.h"
+#include "utils/ConfigFactory.h"
+
+// Global atomic counter for thread IDs
+static std::atomic<int> globalThreadIdCounter(0);
 
 thread_local int BufferPool::colCount = 0;
 thread_local std::map<uint32_t, uint64_t>
@@ -34,46 +38,82 @@ BufferPool::buffers[2];
 // since we call switch function first.
 thread_local int BufferPool::currBufferIdx = 1;
 thread_local int BufferPool::nextBufferIdx = 0;
-std::shared_ptr <DirectIoLib> BufferPool::directIoLib;
+thread_local std::shared_ptr <DirectIoLib> BufferPool::directIoLib;
+
+// Thread-local thread ID for accessing GlobalStaticBufferPool
+thread_local int threadLocalId = -1;
 
 void BufferPool::Initialize(std::vector <uint32_t> colIds, std::vector <uint64_t> bytes,
                             std::vector <std::string> columnNames)
 {
     assert(colIds.size() == bytes.size());
-    int fsBlockSize = std::stoi(ConfigFactory::Instance().getProperty("localfs.block.size"));
-    std::string columnSizePath = ConfigFactory::Instance().getProperty("pixel.column.size.path");
-    std::shared_ptr <ColumnSizeCSVReader> csvReader;
-    if (!columnSizePath.empty())
-    {
-        csvReader = std::make_shared<ColumnSizeCSVReader>(columnSizePath);
-    }
-
-    // give the maximal column size, which is stored in csv reader
+    
+    // Check if using global static buffer pool
+    bool useGlobalStaticPool = ConfigFactory::Instance().boolCheckProperty("pixel.enable.globalStaticBytebuffer");
+    
     if (!BufferPool::isInitialized)
     {
         currBufferIdx = 0;
         nextBufferIdx = 1;
-        directIoLib = std::make_shared<DirectIoLib>(fsBlockSize);
-        for (int i = 0; i < colIds.size(); i++)
+        
+        if (useGlobalStaticPool && GlobalStaticBufferPool::Instance().IsInitialized())
         {
-            uint32_t colId = colIds.at(i);
-            std::string columnName = columnNames[colId];
-            for (int idx = 0; idx < 2; idx++)
+            // Assign thread ID for this thread
+            if (threadLocalId == -1) {
+                threadLocalId = globalThreadIdCounter.fetch_add(1);
+            }
+            
+            // Get buffers from global static pool
+            for (int i = 0; i < colIds.size(); i++)
             {
-                std::shared_ptr <ByteBuffer> buffer;
-                if (columnSizePath.empty())
+                uint32_t colId = colIds.at(i);
+                std::string columnName = columnNames[colId];
+                
+                for (int idx = 0; idx < 2; idx++)
                 {
-                    buffer = BufferPool::directIoLib->allocateDirectBuffer(bytes.at(i) + EXTRA_POOL_SIZE);
+                    // Get pre-allocated buffer from global static pool
+                    std::shared_ptr<ByteBuffer> buffer = 
+                        GlobalStaticBufferPool::Instance().GetBuffer(columnName, threadLocalId, idx);
+                    
+                    BufferPool::nrBytes[colId] = buffer->size();
+                    BufferPool::buffers[idx][colId] = buffer;
                 }
-                else
-                {
-                    buffer = BufferPool::directIoLib->allocateDirectBuffer(csvReader->get(columnName));
-                }
-
-                BufferPool::nrBytes[colId] = buffer->size();
-                BufferPool::buffers[idx][colId] = buffer;
             }
         }
+        else
+        {
+            // Original allocation logic using DirectIoLib
+            int fsBlockSize = std::stoi(ConfigFactory::Instance().getProperty("localfs.block.size"));
+            std::string columnSizePath = ConfigFactory::Instance().getProperty("pixel.column.size.path");
+            int bufferPoolSize=std::stoi(ConfigFactory::Instance().getProperty("pixel.bufferpool.bufferpoolSize"));
+            std::shared_ptr <ColumnSizeCSVReader> csvReader;
+            if (!columnSizePath.empty())
+            {
+                csvReader = std::make_shared<ColumnSizeCSVReader>(columnSizePath);
+            }
+            
+            directIoLib = std::make_shared<DirectIoLib>(fsBlockSize);
+            for (int i = 0; i < colIds.size(); i++)
+            {
+                uint32_t colId = colIds.at(i);
+                std::string columnName = columnNames[colId];
+                for (int idx = 0; idx < 2; idx++)
+                {
+                    std::shared_ptr <ByteBuffer> buffer;
+                    if (columnSizePath.empty())
+                    {
+                        buffer = BufferPool::directIoLib->allocateDirectBuffer(bytes.at(i) + EXTRA_POOL_SIZE);
+                    }
+                    else
+                    {
+                        buffer = BufferPool::directIoLib->allocateDirectBuffer(csvReader->get(columnName));
+                    }
+                    BufferPool::nrBytes[colId] = buffer->size();
+                    BufferPool::buffers[idx][colId] = buffer;
+                }
+            }
+        }
+        
         BufferPool::colCount = colIds.size();
         BufferPool::isInitialized = true;
     }
@@ -104,9 +144,19 @@ int64_t BufferPool::GetBufferId(uint32_t index)
     return index + currBufferIdx * colCount;
 }
 
+int64_t BufferPool::GetBufferIdAt(uint32_t index, int bufIdx)
+{
+    return index + bufIdx * colCount;
+}
+
 std::shared_ptr <ByteBuffer> BufferPool::GetBuffer(uint32_t colId)
 {
     return BufferPool::buffers[currBufferIdx][colId];
+}
+
+std::shared_ptr <ByteBuffer> BufferPool::GetBufferAt(uint32_t colId, int bufIdx)
+{
+    return BufferPool::buffers[bufIdx][colId];
 }
 
 void BufferPool::Reset()

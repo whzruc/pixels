@@ -29,6 +29,7 @@
 #include "physical/storage/LocalFS.h"
 #include "physical/natives/DirectRandomAccessFile.h"
 #include "physical/natives/DirectUringRandomAccessFile.h"
+#include "physical/natives/DirectUringRandomAccessFileNonFixed.h"
 #include <iostream>
 #include <atomic>
 
@@ -43,7 +44,7 @@ public:
     std::shared_ptr <ByteBuffer> readFully(int length, std::shared_ptr <ByteBuffer> bb) override;
 
     std::shared_ptr <ByteBuffer> readAsync(int length, std::shared_ptr <ByteBuffer> bb, int index);
-
+    std::shared_ptr <ByteBuffer> readAsync(int length, std::shared_ptr <ByteBuffer> bb, int index,std::string columnName);
     void readAsyncSubmit(uint32_t size);
 
     void readAsyncComplete(uint32_t size);
@@ -63,6 +64,7 @@ public:
     char readChar() override;
 
     std::string getName() override;
+    std::string getPath() override;
 
 private:
     std::shared_ptr <LocalFS> local;
